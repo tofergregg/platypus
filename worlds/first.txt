@@ -4,11 +4,14 @@ rows:
 cols:
 2
 
-# platypus initial row,col
+# platypus initial row, col, and direction
+# directions: N, E, S, W
 init_row:
 0
 init_col:
 0
+init_direction:
+E
 
 # world
 world:

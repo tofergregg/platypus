@@ -29,8 +29,18 @@ const init = () => {
         }
     }
 
+    // set up platypus
+    var platypus = createPlatypus(world);
 
-    // set up lemur
+    // Call the drawGrid function to draw the grid worldially
+    drawGrid();
+    platypus.images.E.onload = () => {
+        drawPlatypus();
+    }
+}
+
+const createPlatypus = (world) => {
+    platypus = {};
     platypus.direction = 'E';
     platypus.top_left_x = 0;
     platypus.top_left_y = 0;
@@ -50,12 +60,7 @@ const init = () => {
     platypus.images.S.src = "img/platypus-facing-S.png";
     platypus.images.W.src = "img/platypus-facing-W.png";
     platypus.images.N.src = "img/platypus-facing-N.png";
-
-    // Call the drawGrid function to draw the grid worldially
-    drawGrid();
-    platypus.images.E.onload = () => {
-        drawPlatypus();
-    }
+    return platypus;
 }
 
 const drawGrid = (x, y, src) => {
@@ -218,6 +223,9 @@ const parse_world = (world, platypus, url) => {
                     line_num++;
                 } else if (line == 'init_row:') {
                     platypus.row = parseInt(lines[line_num + 1]);
+                    line_num++;
+                } else if (line == 'init_direction:') {
+                    platypus.direction = lines[line_num + 1];
                     line_num++;
                 } else if (line == 'world:') {
                     world.grid = [];
