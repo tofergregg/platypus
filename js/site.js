@@ -1,9 +1,9 @@
-# Globals
+// Globals
 
 var platypus = {};
 var world = {};
 
-# code
+// code
 
 const init = () => {
     world.canvasSize = 600;
