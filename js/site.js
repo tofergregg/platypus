@@ -202,6 +202,7 @@ const parse_world = (world, url) => {
                 if (line == 'rows:') {
                 }
                 console.log(line); 
+                line_num++;
             }
         });
 }
