@@ -6,6 +6,7 @@ body {
   border: 1px solid black;
   margin: 1rem;
   padding: 2rem 2rem;
+  display: inline-block;
   // text-align: center;
 }
 .child {
