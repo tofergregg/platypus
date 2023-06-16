@@ -6,7 +6,7 @@ var world = {};
 // code
 
 const init = () => {
-    world.canvasSize = 600;
+    world.canvasSize = 300;
     world.numRows = 5;
     world.numCols = 5;
     world.groundColor = '#FFF1DA';
