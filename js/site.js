@@ -5,10 +5,11 @@ var world = {};
 const SWIM_COLOR = '#4EFFFF';
 const GROUND_COLOR = '#FFF1DA';
 const WALL_COLOR = 'black';
+const CANVAS_SIZE = 300;
 // code
 
 const init = () => {
-    world.canvasSize = 300;
+    world.canvasSize = CANVAS_SIZE;
     world.numRows = 5;
     world.numCols = 5;
     world.modes = {
@@ -193,6 +194,7 @@ const parse_world = (world, platypus, url) => {
         'swim': SWIM_COLOR,
         'wall': WALL_COLOR,
     }
+    world.canvasSize = CANVAS_SIZE;
     fetch(url)
         .then(res => res.text())
         .then(data => {
