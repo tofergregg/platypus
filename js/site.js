@@ -194,7 +194,7 @@ const parse_world = (world, platypus, url) => {
             lines = data.split('\n');
             var line_num = 0;
             while (line_num < lines.length) {
-                const line = lines[line_num];
+                let line = lines[line_num];
                 if (line.indexOf('#') == 0 || line == '') {
                     // skip comments and blanks
                     line_num++;
