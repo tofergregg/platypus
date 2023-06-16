@@ -193,7 +193,11 @@ const parse_world = (world, url) => {
         .then(data => {
             lines = data.split('\n');
             for (const line of lines) {
-                console.log(line);
+                if (line.indexOf('#') == 0 || line == '') {
+                    // skip comments and blanks
+                    continue;
+                }
+                console.log(line); 
             }
         });
 }
