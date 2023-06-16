@@ -2,6 +2,11 @@ body {
     font: normal 12px Abel, sans-serif;
 }
 
+.editor-div {
+    width: 600px;
+    border: 1px solid black;
+}
+
 .parent {
   // border: 1px solid black;
   margin: 1rem;
