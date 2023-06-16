@@ -1,10 +1,14 @@
 # row x col
-dim:
-1x2
+rows:
+1
+cols:
+2
 
 # platypus initial row,col
-init_pos:
-0,0
+init_row:
+0
+init_col:
+0
 
 # world
 world:
