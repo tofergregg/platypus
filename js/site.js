@@ -187,4 +187,12 @@ const movePlatypus = (mode) => {
     return true;
 }
 
+const parse_world = (world, url) => {
+    fetch(url)
+        .then(res => res.text())
+        .then(data => {
+            console.log(data);
+        });
+}
+
 
