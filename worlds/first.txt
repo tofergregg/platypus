@@ -1,0 +1,17 @@
+# row x col
+dim:
+1x2
+
+# platypus initial row,col
+init_pos:
+0,0
+
+# world
+world:
+ww
+
+# w: water
+# l: land
+# b: blocked
+
+ 
