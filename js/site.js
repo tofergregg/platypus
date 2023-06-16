@@ -2,7 +2,9 @@
 
 var platypus = {};
 var world = {};
-
+const SWIM_COLOR = '#4EFFFF';
+const GROUND_COLOR = '#FFF1DA';
+const WALL_COLOR = 'black';
 // code
 
 const init = () => {
@@ -10,9 +12,9 @@ const init = () => {
     world.numRows = 5;
     world.numCols = 5;
     world.modes = {
-        'walk': '#FFF1DA',
-        'swim': '#4EFFFF',
-        'wall': 'black',
+        'walk': GROUND_COLOR,
+        'swim': SWIM_COLOR,
+        'wall': WALL_COLOR,
     }
     world.grid = [];
     for (let i = 0; i < world.numRows * world.numCols; i++) {
@@ -186,6 +188,11 @@ const movePlatypus = (mode) => {
 }
 
 const parse_world = (world, platypus, url) => {
+    world.modes = {
+        'walk': GROUND_COLOR,
+        'swim': SWIM_COLOR,
+        'wall': WALL_COLOR,
+    }
     fetch(url)
         .then(res => res.text())
         .then(data => {
@@ -216,7 +223,17 @@ const parse_world = (world, platypus, url) => {
                         line_num++;
                         line = lines[line_num];
                         for (var col = 0; col < world.numCols; col++) {
-                            world.grid.push(line[col]);
+                            switch(line[col]) {
+                                case 'w':
+                                    world.grid.push(world.modes.swim);
+                                    break;
+                                case 'l':
+                                    world.grid.push(world.modes.walk);
+                                    break;
+                                case 'b':
+                                    world.grid.push(world.modes.wall);
+                                    break;
+                            }
                         }
                     }
                     line_num++;
