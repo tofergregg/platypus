@@ -187,7 +187,7 @@ const movePlatypus = (mode) => {
     return true;
 }
 
-const parse_world = (world, url) => {
+const parse_world = (world, platypus, url) => {
     fetch(url)
         .then(res => res.text())
         .then(data => {
@@ -201,7 +201,29 @@ const parse_world = (world, url) => {
                     continue;
                 }
                 if (line == 'rows:') {
+                    world.numRows = parseInt(lines[line_num + 1]);
+                    line_num += 2;
+                } else if (line == 'cols:') {
+                    world.numCols = parseInt(lines[line_num + 1]);
+                    line_num += 2;
+                } else if (line == 'init_col:') {
+                    platypus.col = parseInt(lines[line_num + 1]);
+                    line_num += 2;
+                } else if (line == 'init_row:') {
+                    platypus.row = parseInt(lines[line_num + 1]);
+                    line_num += 2;
+                } else if (line == 'world:') {
+                    world.grid = [];
+                    for (var row = 0; row < world.numRows; row++) {
+                        line_num++;
+                        line = lines[line_num];
+                        for (var col = 0; col < world.numCols; col++) {
+                            world.grid.push(line[col]);
+                        }
+                    }
+                    line_num++;
                 }
+
                 console.log(line); 
                 line_num++;
             }
