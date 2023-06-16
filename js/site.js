@@ -192,10 +192,14 @@ const parse_world = (world, url) => {
         .then(res => res.text())
         .then(data => {
             lines = data.split('\n');
-            for (const line of lines) {
+            var line_num = 0;
+            while (line_num < lines.length) {
+                const line = lines[line_num];
                 if (line.indexOf('#') == 0 || line == '') {
                     // skip comments and blanks
                     continue;
+                }
+                if (line == 'rows:') {
                 }
                 console.log(line); 
             }
