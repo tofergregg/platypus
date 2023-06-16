@@ -192,7 +192,9 @@ const parse_world = (world, url) => {
         .then(res => res.text())
         .then(data => {
             lines = data.split('\n');
-            console.log(lines);
+            for (const line of lines) {
+                console.log(line);
+            }
         });
 }
 
