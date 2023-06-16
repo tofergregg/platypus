@@ -9,25 +9,23 @@ const init = () => {
     world.canvasSize = 300;
     world.numRows = 5;
     world.numCols = 5;
-    world.groundColor = '#FFF1DA';
-    world.waterColor = '#4EFFFF';
-    world.wallColor = 'black'
+    world.modes = {
+        'walk': '#FFF1DA',
+        'swim': '#4EFFFF',
+        'wall': 'black',
+    }
     world.grid = [];
     for (let i = 0; i < world.numRows * world.numCols; i++) {
         const randVal = Math.random();
         if (randVal < 0.5) {
-            world.grid.push(world.groundColor);
+            world.grid.push(world.modes['swim']);
         } else if (randVal < 0.8) {
-            world.grid.push(world.waterColor);
+            world.grid.push(world.modes['walk']);
         } else {
-            world.grid.push(world.wallColor);
+            world.grid.push(world.modes['wall']);
         }
     }
 
-    world.modes = {
-        'walk': world.groundColor,
-        'swim': world.waterColor,
-    }
 
     // set up lemur
     platypus.direction = 'E';
