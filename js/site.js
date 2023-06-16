@@ -197,6 +197,7 @@ const parse_world = (world, url) => {
                 const line = lines[line_num];
                 if (line.indexOf('#') == 0 || line == '') {
                     // skip comments and blanks
+                    line_num++;
                     continue;
                 }
                 if (line == 'rows:') {
