@@ -202,16 +202,16 @@ const parse_world = (world, platypus, url) => {
                 }
                 if (line == 'rows:') {
                     world.numRows = parseInt(lines[line_num + 1]);
-                    line_num += 2;
+                    line_num++;
                 } else if (line == 'cols:') {
                     world.numCols = parseInt(lines[line_num + 1]);
-                    line_num += 2;
+                    line_num++;
                 } else if (line == 'init_col:') {
                     platypus.col = parseInt(lines[line_num + 1]);
-                    line_num += 2;
+                    line_num++;
                 } else if (line == 'init_row:') {
                     platypus.row = parseInt(lines[line_num + 1]);
-                    line_num += 2;
+                    line_num++;
                 } else if (line == 'world:') {
                     world.grid = [];
                     for (var row = 0; row < world.numRows; row++) {
