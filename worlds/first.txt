@@ -1,24 +1,37 @@
 # row x col
 rows:
-1
+2
 cols:
 2
 
-# platypus initial row, col, and direction
-# directions: N, E, S, W
-init_row:
-0
-init_col:
-0
-init_direction:
-E
-
 # world
 world:
+ww
 ww
 
 # w: water
 # l: land
 # b: blocked
 
- 
+# objects
+# objects need to come after world definition
+
+objects:
+p.
+..
+
+# p: platypus
+# c: crab
+# e: egg
+# .: empty
+
+# platypus initial direction
+# directions: N, E, S, W
+platypus_init_direction:
+E
+
+# instructions
+# start with :text:, finish with :endtext:
+:text:
+Swim the platypus to the bottom right corner of the board.
+:endtext:

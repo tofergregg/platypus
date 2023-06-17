@@ -6,37 +6,35 @@ const SWIM_COLOR = '#4EFFFF';
 const GROUND_COLOR = '#FFF1DA';
 const WALL_COLOR = 'black';
 const CANVAS_SIZE = 300;
+const INIT_ROWS = 5;
+const INIT_COLS = 5;
 // code
 
-const init = () => {
+const init = async () => {
+    await loadWorld('worlds/first.txt');    
+
+    // Call the drawWorld function to draw the grid worldially
+    drawWorld();
+    drawPlatypus();
+}
+const createWorld = () => {
+    world = {};
+    world.text = '';
+    world.bases = {
+        'l': GROUND_COLOR,
+        'w': SWIM_COLOR,
+        'b': WALL_COLOR,
+    }
     world.canvasSize = CANVAS_SIZE;
-    world.numRows = 5;
-    world.numCols = 5;
-    world.modes = {
-        'walk': GROUND_COLOR,
-        'swim': SWIM_COLOR,
-        'wall': WALL_COLOR,
-    }
     world.grid = [];
-    for (let i = 0; i < world.numRows * world.numCols; i++) {
-        const randVal = Math.random();
-        if (randVal < 0.5) {
-            world.grid.push(world.modes['swim']);
-        } else if (randVal < 0.8) {
-            world.grid.push(world.modes['walk']);
-        } else {
-            world.grid.push(world.modes['wall']);
-        }
+    world.images = {
+        c: new Image(), // crab
+        e: new Image(), // egg
     }
+    world.images.c.src = "img/crab.png";
+    world.images.e.src = "img/egg.png";
 
-    // set up platypus
-    var platypus = createPlatypus(world);
-
-    // Call the drawGrid function to draw the grid worldially
-    drawGrid();
-    platypus.images.E.onload = () => {
-        drawPlatypus();
-    }
+    return world;
 }
 
 const createPlatypus = (world) => {
@@ -63,7 +61,7 @@ const createPlatypus = (world) => {
     return platypus;
 }
 
-const drawGrid = (x, y, src) => {
+const drawWorld = (x, y, src) => {
     // Get the canvas element and its 2D rendering context
     const canvas = document.getElementById("gridCanvas");
     const context = canvas.getContext("2d");
@@ -104,12 +102,18 @@ const drawGrid = (x, y, src) => {
     // Draw the grid lines
     context.stroke();
 
-    // Draw the colored squares
+    // Draw the colored squares and objects
     for (let r = 0; r < world.numRows; r++) {
         for (let c = 0; c < world.numCols; c++) {
-            colorSquare(r, c, world.grid[gridLoc(r, c)]);
+            colorSquare(r, c, world.grid[gridLoc(r, c)].base);
+            for (let obj of world.grid[gridLoc(r, c)].objects) {
+                drawWorldObject(r, c, obj);
+            }
         }
     }
+
+    // draw the text
+    document.querySelector('#instructions').innerText = world.text;
 }
 
 const drawPlatypus = ()  => {
@@ -120,14 +124,22 @@ const drawPlatypus = ()  => {
     context.drawImage(platypus.images[platypus.direction], xpos, ypos, platypus.square_side_len- 2 * platypus.border, platypus.square_side_len - 2 * platypus.border);
 }
 
-const colorSquare = (row, col, color) => {
+const drawWorldObject = (row, col, base)  => {
+    const canvas = document.getElementById("gridCanvas");
+    const context = canvas.getContext("2d");
+    const xpos = col * platypus.square_side_len + platypus.border;
+    const ypos = row * platypus.square_side_len + platypus.border;
+    context.drawImage(world.images[base], xpos, ypos, platypus.square_side_len- 2 * platypus.border, platypus.square_side_len - 2 * platypus.border);
+}
+
+const colorSquare = (row, col, base) => {
     const canvas = document.getElementById("gridCanvas");
     const context = canvas.getContext("2d");
     const xpos = col * platypus.square_side_len + 1;
     const ypos = row * platypus.square_side_len + 1;
     context.beginPath();
     context.rect(xpos, ypos, platypus.square_side_len - 2, platypus.square_side_len - 2);
-    context.fillStyle = color;
+    context.fillStyle = world.bases[base];
     context.fill();
 }
 
@@ -135,21 +147,23 @@ const rotatePlatypus = (clockwise) => {
     let directionMap;
     if (clockwise) {
         directionMap = { E: 'S', S: 'W', W: 'N', N: 'E', };
+        addCommandToProgram('turn_right()');
     } else {
         directionMap = { E: 'N', S: 'E', W: 'S', N: 'W', };
+        addCommandToProgram('turn_left()');
     }
     const new_dir = directionMap[platypus.direction];
     platypus.direction = new_dir;
     platypus.image = platypus.images[new_dir];
-    drawGrid();
+    drawWorld();
     drawPlatypus();
 }
 
 const gridLoc = (row, col) => row * world.numCols + col;
 
-const movePlatypus = (mode) => {
+const movePlatypus = (base) => {
     // mode and color must match
-    if (world.modes[mode] != world.grid[gridLoc(platypus.row, platypus.col)]) {
+    if (base != world.grid[gridLoc(platypus.row, platypus.col)].base) {
         return false;
     }
 
@@ -188,71 +202,132 @@ const movePlatypus = (mode) => {
             platypus.row--;
             break;
     }
-    drawGrid();
+    switch (base) {
+        case 'w':
+            addCommandToProgram('swim()');
+            break;
+        case 'l':
+            addCommandToProgram('walk()');
+            break;
+    }
+
+    drawWorld();
     drawPlatypus();
     return true;
 }
 
-const parse_world = (world, platypus, url) => {
-    world.modes = {
-        'walk': GROUND_COLOR,
-        'swim': SWIM_COLOR,
-        'wall': WALL_COLOR,
-    }
-    world.canvasSize = CANVAS_SIZE;
-    fetch(url)
-        .then(res => res.text())
-        .then(data => {
-            lines = data.split('\n');
-            var line_num = 0;
-            while (line_num < lines.length) {
-                let line = lines[line_num];
-                if (line.indexOf('#') == 0 || line == '') {
-                    // skip comments and blanks
-                    line_num++;
-                    continue;
-                }
-                if (line == 'rows:') {
-                    world.numRows = parseInt(lines[line_num + 1]);
-                    line_num++;
-                } else if (line == 'cols:') {
-                    world.numCols = parseInt(lines[line_num + 1]);
-                    line_num++;
-                } else if (line == 'init_col:') {
-                    platypus.col = parseInt(lines[line_num + 1]);
-                    line_num++;
-                } else if (line == 'init_row:') {
-                    platypus.row = parseInt(lines[line_num + 1]);
-                    line_num++;
-                } else if (line == 'init_direction:') {
-                    platypus.direction = lines[line_num + 1];
-                    line_num++;
-                } else if (line == 'world:') {
-                    world.grid = [];
-                    for (var row = 0; row < world.numRows; row++) {
+const loadWorld = async (url) => {
+        await fetch(url)
+            .then(res => res.text())
+            .then(data => {
+                world = createWorld();
+                lines = data.split('\n');
+                var line_num = 0;
+                while (line_num < lines.length) {
+                    let line = lines[line_num];
+                    if (line.indexOf('#') == 0 || line == '') {
+                        // skip comments and blanks
                         line_num++;
-                        line = lines[line_num];
-                        for (var col = 0; col < world.numCols; col++) {
-                            switch(line[col]) {
-                                case 'w':
-                                    world.grid.push(world.modes.swim);
-                                    break;
-                                case 'l':
-                                    world.grid.push(world.modes.walk);
-                                    break;
-                                case 'b':
-                                    world.grid.push(world.modes.wall);
-                                    break;
+                        continue;
+                    }
+                    if (line == 'rows:') {
+                        world.numRows = parseInt(lines[line_num + 1]);
+                        line_num++;
+                    } else if (line == 'cols:') {
+                        world.numCols = parseInt(lines[line_num + 1]);
+                        line_num++;
+                    } else if (line == 'init_direction:') {
+                        platypus.direction = lines[line_num + 1];
+                        line_num++;
+                    } else if (line == 'world:') {
+                        for (var row = 0; row < world.numRows; row++) {
+                            line_num++;
+                            line = lines[line_num];
+                            for (var col = 0; col < world.numCols; col++) {
+                                world.grid.push({base: line[col], objects: []});
+                            }
+                            platypus = createPlatypus(world);
+                        }
+                        line_num++;
+                    } else if (line == 'objects:') {
+                        for (var row = 0; row < world.numRows; row++) {
+                            line_num++;
+                            line = lines[line_num];
+                            for (var col = 0; col < world.numCols; col++) {
+                                if (line[col] == 'p') {
+                                    platypus.row = row;
+                                    platypus.col = col;
+                                } else if (line[col] != '.') {
+                                    world.grid[row * world.numCols + col].objects.push(line[col]);
+                                }
                             }
                         }
+                        line_num++;
+                    } else if (line == ':text:') {
+                        world.text = '';
+                        line_num++;
+                        line = lines[line_num];
+                        while (line != ':endtext:') {
+                            world.text += line + '\n';
+                            line_num++;
+                            line = lines[line_num];
+                        }
+                        line_num++;
                     }
+
+                    // console.log(line); 
                     line_num++;
                 }
-
-                console.log(line); 
-                line_num++;
-            }
+                platypus.square_side_len = world.canvasSize / Math.max(world.numRows, world.numCols);
+                drawWorld();
+                drawPlatypus();
         });
 }
 
+const eat = () => {
+    // can only eat crabs
+    const loc = gridLoc(platypus.row, platypus.col);
+    objects = world.grid[loc].objects
+    if (objects.indexOf('c') != -1) {
+        removeObjectFromWorld(platypus.row, platypus.col, 'c')
+        addCommandToProgram('eat()');
+        return true;
+    } else {
+        return false;
+    }
+}
 
+const lay_egg = () => {
+    // eggs can only be layed on land
+    const loc = gridLoc(platypus.row, platypus.col);
+    base = world.grid[loc].base;
+    if (base == 'l') {
+        addObjectToWorld(platypus.row, platypus.col, 'e');
+        addCommandToProgram('lay_egg()');
+        return true;
+    }
+    return false;
+}
+
+const removeObjectFromWorld = (row, col, obj) => {
+    const loc = gridLoc(platypus.row, platypus.col);
+    world.grid[loc].objects.pop(world.grid[loc].objects.indexOf(obj)); 
+    drawWorld();
+    drawPlatypus();
+}
+
+const addObjectToWorld = (row, col, obj) => {
+    const loc = gridLoc(platypus.row, platypus.col);
+    world.grid[loc].objects.push(obj); 
+    drawWorld();
+    drawPlatypus();
+}
+
+const addCommandToProgram = (command) => {
+    let editor = window.cmEditor;
+    const newCode = editor.state.doc.toString() + command + '\n';
+    editor.dispatch({
+        changes: {from: 0, to: editor.state.doc.length, insert: newCode}
+    });
+    editor.domAtPos(editor.state.doc.length).node.scrollIntoView({block:'end'})
+}

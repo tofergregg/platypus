@@ -10,14 +10,28 @@
         <h1>Kira Platypus</h1>
         <div class='parent'>
             <div class='child'>
+                <button onclick='loadWorld("worlds/first.txt")'>First World</button>
+                <p>
+                <button onclick='loadWorld("worlds/second.txt")'>Second World</button>
+                <p>
+                <button onclick='loadWorld("worlds/river.txt")'>River</button>
+                <p>
+                <div id="instructions"></div>
+            </div>
+            <div class='child'>
                 <canvas id="gridCanvas"></canvas>
             </div>
             <div class='child'>
                 <button onclick="rotatePlatypus(true)">turn_right()</button>&nbsp;
                 <button onclick="rotatePlatypus(false)">turn_left()</button>&nbsp;
-                <button onclick="movePlatypus('walk')">walk()</button>
-                <button onclick="movePlatypus('swim')">swim()</button>
+                <button onclick="movePlatypus('l')">walk()</button>
+                <button onclick="movePlatypus('w')">swim()</button>
+                <button onclick="eat()">eat()</button>
+                <button onclick="lay_egg()">lay_egg()</button>
+                <input type="checkbox" id="interactive" checked>Interactive
+
                 <p>
+                <button onclick="run()">Run program!</button>
                 <div id="editor" class="editor-div">
                 </div>
             </div>
