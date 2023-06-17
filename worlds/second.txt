@@ -1,0 +1,39 @@
+# row x col
+rows:
+2
+cols:
+2
+
+# world
+world:
+wl
+lw
+
+# w: water
+# l: land
+# b: blocked
+
+# objects
+# objects need to come after world definition
+
+objects:
+p.
+..
+
+# p: platypus
+# c: crab
+# e: egg
+# .: empty
+
+# platypus initial direction
+# directions: N, E, S, W
+platypus_init_direction:
+E
+
+# instructions
+# start with :text:, finish with :endtext:
+:text:
+Lay an egg in each of the land areas.
+Blue is water, tan is land.
+You must swim in water, and walk on land.
+:endtext:

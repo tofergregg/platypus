@@ -221,6 +221,7 @@ const loadWorld = async (url) => {
             .then(res => res.text())
             .then(data => {
                 world = createWorld();
+                world.url = url;
                 lines = data.split('\n');
                 var line_num = 0;
                 while (line_num < lines.length) {

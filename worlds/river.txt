@@ -1,0 +1,40 @@
+# row x col
+rows:
+5
+cols:
+5
+
+# world
+world:
+wwwll
+llwll
+llwll
+llwll
+llwww
+# w: water
+# l: land
+# b: blocked
+
+# objects
+# objects need to come after world definition
+
+objects:
+p....
+.....
+.....
+.....
+....c
+
+# p: platypus
+# c: crab
+# e: egg
+# .: empty
+
+# platypus initial direction
+# directions: N, E, S, W
+platypus_init_direction:
+E
+
+:text:
+Swim through the river and eat the crab.
+:endtext:
