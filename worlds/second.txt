@@ -2,12 +2,12 @@
 rows:
 2
 cols:
-2
+5
 
 # world
 world:
-wl
-lw
+wwllw
+lwwww
 
 # w: water
 # l: land
@@ -17,8 +17,8 @@ lw
 # objects need to come after world definition
 
 objects:
-p.
-..
+p....
+.....
 
 # p: platypus
 # c: crab
@@ -33,7 +33,7 @@ E
 # instructions
 # start with :text:, finish with :endtext:
 :text:
-Lay an egg in each of the land areas.
+Put down an egg in each blue (water) square.
 Blue is water, tan is land.
-You must swim in water, and walk on land.
+The platypus must swim in water, and cannot go onto land.
 :endtext:
