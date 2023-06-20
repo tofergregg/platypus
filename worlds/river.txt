@@ -29,6 +29,8 @@ p....
 # c: crab
 # e: egg
 # .: empty
+# to put multiple objects in one square,
+# put in brackets, e.g., [pe] for platypus and egg
 
 # platypus initial direction
 # directions: N, E, S, W
@@ -36,5 +38,15 @@ platypus_init_direction:
 E
 
 :text:
-Swim through the river and eat the crab.
+Swim through the river and pick up the crab.
 :endtext:
+
+final_objects:
+.....
+.....
+.....
+.....
+....p
+
+platypus_final_direction:
+E

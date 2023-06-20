@@ -11,12 +11,18 @@ const INIT_ROWS = 5;
 const INIT_COLS = 5;
 // code
 
-const platypusInit = async () => {
-    await loadWorld('worlds/first.txt');    
 
+
+const platypusInit = async () => {
+    const canvas = document.getElementById('gridCanvas');
+    canvas.width = canvas.height = CANVAS_SIZE;
+
+    const pw = await loadWorld('worlds/first.txt');    
+    platypus = pw.platypus;
+    world = pw.world;
     // Call the drawWorld function to draw the grid worldially
-    drawWorld();
-    drawPlatypus();
+    drawWorld(canvas);
+    drawPlatypus(canvas);
 }
 const createWorld = () => {
     world = {};
@@ -26,8 +32,8 @@ const createWorld = () => {
         'w': SWIM_COLOR,
         'b': WALL_COLOR,
     }
-    world.canvasSize = CANVAS_SIZE;
     world.grid = [];
+    world.final_grid = []; // for solution
     world.images = {
         c: new Image(), // crab
         e: new Image(), // egg
@@ -63,7 +69,10 @@ const createPlatypus = (world) => {
     platypus.top_left_y = 0;
     platypus.row = 0;
     platypus.col = 0;
-    platypus.square_side_len = world.canvasSize / Math.max(world.numRows, world.numCols);
+    platypus.square_side_len = (can) => {
+        // assume square
+        return can.width / Math.max(world.numRows, world.numCols);
+    }
     platypus.num_rows = world.numRows;
     platypus.num_cols = world.numCols;
     platypus.border = 2;
@@ -71,34 +80,26 @@ const createPlatypus = (world) => {
     return platypus;
 }
 
-const drawWorld = (x, y, src) => {
-    // Get the canvas element and its 2D rendering context
-    const canvas = document.getElementById("gridCanvas");
+const drawWorld = (canvas, finalState = false) => {
     const context = canvas.getContext("2d");
 
     // Set the number of rows and columns
     const numRows = world.numRows;
     const numCols = world.numCols; 
-    const canvasSize = world.canvasSize;
-
-    // Set the size of the canvas
-    canvas.width = world.canvasSize;
-    canvas.height = world.canvasSize;
 
     // Calculate the size of each cell (always square)
-    const cellSize = canvasSize / (Math.max(numRows, numCols));
+    const cellSize = canvas.width / (Math.max(numRows, numCols));
     const width = cellSize * numCols;
     const height = cellSize * numRows;
 
     // Clear the canvas
-    context.clearRect(0, 0, canvasSize, canvasSize);
-
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.beginPath();
     // Draw the vertical grid lines
     for (let x = 0; x <= width; x += cellSize) {
         context.moveTo(x, 0);
         context.lineTo(x, height);
     }
-
     // Draw the horizontal grid lines
     for (let y = 0; y <= height; y += cellSize) {
         context.moveTo(0, y);
@@ -115,48 +116,55 @@ const drawWorld = (x, y, src) => {
     // Draw the colored squares and objects
     for (let r = 0; r < world.numRows; r++) {
         for (let c = 0; c < world.numCols; c++) {
-            colorSquare(r, c, world.grid[gridLoc(r, c)].base);
-            for (let obj of world.grid[gridLoc(r, c)].objects) {
-                drawWorldObject(r, c, obj);
+            colorSquare(r, c, world.grid[gridLoc(r, c)].base, canvas);
+            if (finalState) {
+                for (let obj of world.final_grid[gridLoc(r, c)].objects) {
+                    drawWorldObject(r, c, obj, canvas, finalState);
+                }
+            } else {
+                for (let obj of world.grid[gridLoc(r, c)].objects) {
+                    drawWorldObject(r, c, obj, canvas, finalState);
+                }
             }
         }
     }
 
     // draw the text
     document.querySelector('#instructions').innerText = world.text;
+
 }
 
-const drawPlatypus = ()  => {
-    const canvas = document.getElementById("gridCanvas");
+const drawPlatypus = (canvas, finalState = false)  => {
     const context = canvas.getContext("2d");
-    const xpos = platypus.col * platypus.square_side_len + platypus.border;
-    const ypos = platypus.row * platypus.square_side_len + platypus.border;
-    if (world.images['plat'+platypus.direction].loaded) {
-        context.drawImage(world.images['plat'+platypus.direction], xpos, ypos, platypus.square_side_len- 2 * platypus.border, platypus.square_side_len - 2 * platypus.border);
+    const col = finalState ? platypus.final_col : platypus.col;
+    const row = finalState ? platypus.final_row : platypus.row;
+    const xpos = col * platypus.square_side_len(canvas) + platypus.border;
+    const ypos = row * platypus.square_side_len(canvas) + platypus.border;
+    const platDir = finalState ? platypus.final_direction : platypus.direction;
+    if (world.images['plat'+platDir].loaded) {
+        context.drawImage(world.images['plat'+platDir], xpos, ypos, platypus.square_side_len(canvas) - 2 * platypus.border, platypus.square_side_len(canvas) - 2 * platypus.border);
     } else {
-        setTimeout(drawPlatypus, 50); // wait for image to load
+        setTimeout(() => drawPlatypus(canvas, finalState), 50); // wait for image to load
     }
 }
 
-const drawWorldObject = (row, col, base)  => {
-    const canvas = document.getElementById("gridCanvas");
+const drawWorldObject = (row, col, base, canvas, finalState = false)  => {
     const context = canvas.getContext("2d");
-    const xpos = col * platypus.square_side_len + platypus.border;
-    const ypos = row * platypus.square_side_len + platypus.border;
+    const xpos = col * platypus.square_side_len(canvas) + platypus.border;
+    const ypos = row * platypus.square_side_len(canvas) + platypus.border;
     if (world.images[base].loaded) {
-        context.drawImage(world.images[base], xpos, ypos, platypus.square_side_len- 2 * platypus.border, platypus.square_side_len - 2 * platypus.border);
+        context.drawImage(world.images[base], xpos, ypos, platypus.square_side_len(canvas) - 2 * platypus.border, platypus.square_side_len(canvas) - 2 * platypus.border);
     } else {
-        setTimeout(() => drawWorldObject(row, col, base), 50); // wait for image to load
+        setTimeout(() => drawWorldObject(row, col, base, canvas), 50); // wait for image to load
     }
 }
 
-const colorSquare = (row, col, base) => {
-    const canvas = document.getElementById("gridCanvas");
+const colorSquare = (row, col, base, canvas) => {
     const context = canvas.getContext("2d");
-    const xpos = col * platypus.square_side_len + 1;
-    const ypos = row * platypus.square_side_len + 1;
+    const xpos = col * platypus.square_side_len(canvas) + 1;
+    const ypos = row * platypus.square_side_len(canvas) + 1;
     context.beginPath();
-    context.rect(xpos, ypos, platypus.square_side_len - 2, platypus.square_side_len - 2);
+    context.rect(xpos, ypos, platypus.square_side_len(canvas) - 2, platypus.square_side_len(canvas) - 2);
     context.fillStyle = world.bases[base];
     context.fill();
 }
@@ -173,8 +181,8 @@ const rotatePlatypus = (clockwise) => {
     const new_dir = directionMap[platypus.direction];
     platypus.direction = new_dir;
     platypus.image = world.images['plat'+new_dir];
-    drawWorld();
-    drawPlatypus();
+    drawWorld(document.querySelector("#gridCanvas"));
+    drawPlatypus(document.querySelector("#gridCanvas"));
 }
 window.rotatePlatypus = rotatePlatypus;
 
@@ -190,7 +198,7 @@ const movePlatypus = (base) => {
             // cannot go out of bounds or through walls
         case 'E':
             if (platypus.col == platypus.num_cols - 1 ||
-                world.grid[gridLoc(platypus.row, platypus.col + 1)] == GROUND_COLOR) {
+                world.grid[gridLoc(platypus.row, platypus.col + 1)].base == 'l') {
                 // alert("Cannot go outside of grid!");
                 return false;
             }
@@ -198,7 +206,7 @@ const movePlatypus = (base) => {
             break;
         case 'S':
             if (platypus.row == platypus.num_rows - 1 ||
-                world.grid[gridLoc(platypus.row + 1, platypus.col)] == GROUND_COLOR) {
+                world.grid[gridLoc(platypus.row + 1, platypus.col)].base == 'l') {
                 // alert("Cannot go outside of grid!");
                 return false;
             }
@@ -206,7 +214,7 @@ const movePlatypus = (base) => {
             break;
         case 'W':
             if (platypus.col == 0 || 
-                world.grid[gridLoc(platypus.row, platypus.col - 1)] == GROUND_COLOR) {
+                world.grid[gridLoc(platypus.row, platypus.col - 1)].base == 'l') { 
                 // alert("Cannot go outside of grid!");
                 return false;
             }
@@ -214,7 +222,7 @@ const movePlatypus = (base) => {
             break;
         case 'N':
             if (platypus.row == 0 ||
-                world.grid[gridLoc(platypus.row - 1, platypus.col)] == GROUND_COLOR) {
+                world.grid[gridLoc(platypus.row - 1, platypus.col)].base == 'l') {
                 // alert("Cannot go outside of grid!");
                 return false;
             }
@@ -230,14 +238,14 @@ const movePlatypus = (base) => {
             break;
     }
 
-    drawWorld();
-    drawPlatypus();
+    drawWorld(document.querySelector("#gridCanvas"));
+    drawPlatypus(document.querySelector("#gridCanvas"));
     return true;
 }
 window.movePlatypus = movePlatypus;
 
 const loadWorld = async (url, eraseCode) => {
-    await fetch(url)
+    const pw = await fetch(url)
         .then(res => res.text())
         .then(data => {
             world = createWorld();
@@ -257,8 +265,11 @@ const loadWorld = async (url, eraseCode) => {
                 } else if (line == 'cols:') {
                     world.numCols = parseInt(lines[line_num + 1]);
                     line_num++;
-                } else if (line == 'init_direction:') {
+                } else if (line == 'platypus_init_direction:') {
                     platypus.direction = lines[line_num + 1];
+                    line_num++;
+                } else if (line == 'platypus_final_direction:') {
+                    platypus.final_direction = lines[line_num + 1];
                     line_num++;
                 } else if (line == 'world:') {
                     for (var row = 0; row < world.numRows; row++) {
@@ -266,21 +277,49 @@ const loadWorld = async (url, eraseCode) => {
                         line = lines[line_num];
                         for (var col = 0; col < world.numCols; col++) {
                             world.grid.push({base: line[col], objects: []});
+                            world.final_grid.push({base: line[col], objects: []});
                         }
                         platypus = createPlatypus(world);
                     }
                     line_num++;
-                } else if (line == 'objects:') {
+                } else if (line == 'objects:' || line == 'final_objects:') {
+                    let grid = world.grid;
+                    if (line == 'final_objects:') {
+                        grid = world.final_grid;
+                    }
                     for (var row = 0; row < world.numRows; row++) {
                         line_num++;
                         line = lines[line_num];
-                        for (var col = 0; col < world.numCols; col++) {
-                            if (line[col] == 'p') {
-                                platypus.row = row;
-                                platypus.col = col;
-                            } else if (line[col] != '.') {
-                                world.grid[row * world.numCols + col].objects.push(line[col]);
+                        let pos = 0;
+                        let col = 0;
+                        let multipleObj = false;
+                        while (col < world.numCols) {
+                            const nextToken = line[pos];
+                            if (nextToken == '[') {
+                                multipleObj = true;
+                                pos++;
+                                continue;
+                            } else if (nextToken == ']') {
+                                multipleObj = false;
+                                pos++;
+                                col++;
+                                continue;
                             }
+                            if (nextToken == 'p') {
+                                if (grid == world.grid) {
+                                    platypus.row = row;
+                                    platypus.col = col;
+                                } else {
+                                    platypus.final_row = row;
+                                    platypus.final_col = col;
+                                }
+                            } else if (nextToken != '.') {
+                                grid[row * world.numCols + col].objects.push(line[pos]);
+                            }
+                            if (!multipleObj) {
+                                col++;
+                            }
+                            pos++;
                         }
                     }
                     line_num++;
@@ -299,13 +338,23 @@ const loadWorld = async (url, eraseCode) => {
                 // console.log(line); 
                 line_num++;
             }
-            platypus.square_side_len = world.canvasSize / Math.max(world.numRows, world.numCols);
-            drawWorld();
-            drawPlatypus();
+            const mainCanvas = document.querySelector('#gridCanvas');
+            drawWorld(mainCanvas);
+            drawPlatypus(mainCanvas);
+
+            // draw the final image
+            const finalCanvas = document.querySelector("#finalCanvas");
+            finalCanvas.width = mainCanvas.width / 1.5;
+            finalCanvas.height = mainCanvas.height / 1.5;
+            drawWorld(finalCanvas, true);
+            drawPlatypus(finalCanvas, true);
+
             if (eraseCode) {
                 erase_code();
             }
+            return {world: world, platypus: platypus};
         });
+    return pw;
 }
 window.loadWorld = loadWorld;
 
@@ -337,15 +386,15 @@ window.put_down = put_down;
 const removeObjectFromWorld = (row, col, obj) => {
     const loc = gridLoc(platypus.row, platypus.col);
     world.grid[loc].objects.pop(world.grid[loc].objects.indexOf(obj)); 
-    drawWorld();
-    drawPlatypus();
+    drawWorld(document.querySelector("#gridCanvas"));
+    drawPlatypus(document.querySelector("#gridCanvas"));
 }
 
 const addObjectToWorld = (row, col, obj) => {
     const loc = gridLoc(platypus.row, platypus.col);
     world.grid[loc].objects.push(obj); 
-    drawWorld();
-    drawPlatypus();
+    drawWorld(document.querySelector("#gridCanvas"));
+    drawPlatypus(document.querySelector("#gridCanvas"));
 }
 
 const addCommandToProgram = (command) => {

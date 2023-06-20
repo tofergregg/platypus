@@ -24,6 +24,8 @@ p....
 # c: crab
 # e: egg
 # .: empty
+# to put multiple objects in one square,
+# put in brackets, e.g., [pe] for platypus and egg
 
 # platypus initial direction
 # directions: N, E, S, W
@@ -37,3 +39,10 @@ Put down an egg in each blue (water) square.
 Blue is water, tan is land.
 The platypus must swim in water, and cannot go onto land.
 :endtext:
+
+final_objects:
+e...[pe]
+.eeee
+
+platypus_final_direction:
+E
