@@ -20,6 +20,14 @@ body {
   vertical-align: top;
 }
 
+#left-panel {
+    width: 20%;
+}
+
+#middle-panel {
+    width: 30%;
+}
+
 #speed-slider {
-    width:80%;
+    width:50%;
 }

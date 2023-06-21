@@ -49,6 +49,10 @@ self.onmessage = async (event) => {
         getMouseDown.y = event.data.y;
         return;
     }
+    if (event.data.cmd === 'run_speed') {
+        this.stepSleep = event.data.stepSleep; 
+        return;
+    }
     if (event.data.control !== undefined) {
         console.log("Control event");
         self.jsMessage = event.data.message;
@@ -76,7 +80,7 @@ self.onmessage = async (event) => {
 
     try {
         await self.pyodide.runPythonAsync(`
-        from js import turn_right, swim, turn_left, put_down
+        from js import turn_right, swim, turn_left, put_down, pick_up
         from js import input_fixed
         import asyncio
         import pyodide
@@ -211,11 +215,15 @@ async function turn_left() {
 
 async function swim() {
     await sleep_fixed(0.3 * 50 / this.stepSleep);
-    console.log(this.stepSleep);
     self.postMessage({platypusCommand: 'swim()'});
 }
 
 async function put_down(obj) {
     await sleep_fixed(0.3 * this.stepSleep / 50);
     self.postMessage({platypusCommand: 'put_down()', arg: obj});
+}
+
+async function pick_up(obj) {
+    await sleep_fixed(0.3 * this.stepSleep / 50);
+    self.postMessage({platypusCommand: 'pick_up()', arg: obj});
 }

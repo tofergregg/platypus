@@ -12,7 +12,7 @@
     <body onload="init_main()">
         <h1>Kira Platypus</h1>
         <div class='parent'>
-            <div class='child'>
+            <div class='child' id='left-panel'>
                 <button onclick='loadWorld("worlds/first.txt", true)'>First World</button>
                 <p>
                 <button onclick='loadWorld("worlds/second.txt", true)'>Second World</button>
@@ -23,12 +23,15 @@
                 After you finish, the platypus world should look like this:<p>
                 <canvas id="finalCanvas"></canvas>
             </div>
-            <div class='child'>
+            <div class='child' id='middle-panel'>
                 <canvas id="gridCanvas"></canvas>
                 <br>
-                Speed: <input type="range" id="speed-slider" min="10" max="1000" value="50">
+                Speed: <input type="range" id="speed-slider" min="10" max="1000" value="50" onchange="updateSpeed()">
+                <textarea id='console-output' rows="15" cols="40" spellcheck="false">
+</textarea>
+
             </div>
-            <div class='child'>
+            <div class='child' id='right-panel'>
                 <button onclick="rotatePlatypus(true)">turn_right()</button>&nbsp;
                 <button onclick="rotatePlatypus(false)">turn_left()</button>&nbsp;
                 <button onclick="movePlatypus('w')">swim()</button>
@@ -38,6 +41,8 @@
 
                 <p>
                 <button onclick="run_pyodide()">Run program!</button>
+                &nbsp;
+                <button onclick="interruptExecution()">Stop program</button>
                 <div id="editor" class="editor-div">
                 </div>
             </div>

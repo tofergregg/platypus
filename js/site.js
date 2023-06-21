@@ -361,7 +361,7 @@ window.loadWorld = loadWorld;
 const pick_up = () => {
     // can only eat crabs
     const loc = gridLoc(platypus.row, platypus.col);
-    objects = world.grid[loc].objects
+    const objects = world.grid[loc].objects
     if (objects.indexOf('c') != -1) {
         removeObjectFromWorld(platypus.row, platypus.col, 'c')
         addCommandToProgram('pick_up()');
@@ -421,6 +421,7 @@ import { setupWorker,
     asyncRun, 
     sendMessageToWorker,
     interruptExecution,
+    updateSpeed,
 } from "./py-worker.js";
 
 const init_main = () => {
@@ -461,6 +462,7 @@ const init_main = () => {
     window.lastMouseDown = {x: 0, y: 0};
     canvas.addEventListener("mousedown", mouseDown, {passive: false})
     canvas.addEventListener("touchstart", mouseDown,{passive: false})
+    window.updateSpeed = updateSpeed;
 
     setupWorker();
 }
@@ -536,7 +538,8 @@ async function transform_code_for_async(code) {
     const transform_code = `import ast
 
 parse_functions = {'input': [], 'time': ["sleep"], 'canvas': ["get_mouse_x", "get_mouse_y", "get_mouse_down"],
-                   'turn_right': [], 'turn_left': [], 'swim': [], 'put_down': []}
+                   'turn_right': [], 'turn_left': [], 'swim': [], 'put_down': [],
+                   'pick_up': [],}
 def make_await(node):
     if hasattr(node.func, 'id') and node.func.id in parse_functions.keys():
         # top-level
@@ -613,8 +616,7 @@ window.run_pyodide = async () => {
         } else {
             window.stopExecution = false;
 
-            // remove:
-            // document.getElementById('console-output').value = '';
+            document.getElementById('console-output').value = '';
             python_runner(code, context);
         }
     }
@@ -667,7 +669,6 @@ await ___WRAPPER()
 }
 
 window.reset_console = () => {
-    return; // remove
     if (window.codeRunning) {
         interruptExecution();
     }
@@ -2108,3 +2109,4 @@ if __name__ == "__main__":
     const fullURL = window.location.origin + window.location.pathname + '?example=' + search;
     window.history.pushState({},"", fullURL);
 }
+

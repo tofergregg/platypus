@@ -1,7 +1,6 @@
 import { updateCanvas } from "./drawing.js";
 
 let pyodideWorker;
-// remove: let interruptBuffer;
 window.codeRunning = false;
 const callbacks = {};
 
@@ -12,17 +11,11 @@ const interruptExecution = () => {
     // Basically, we'll keep hitting ctrl-c until we stop the program!
     window.codeRunning = false;
     pyodideWorker.terminate();
-    //pyodideWorker.postMessage({cmd: "stopProgram"});
     setupWorker();
 }
 
 const setupWorker = () => {
     pyodideWorker = new Worker("./js/webworker.js");
-    // remove: const interruptBufferRaw = new SharedArrayBuffer(1);
-    // remove: interruptBuffer = new Uint8Array(interruptBufferRaw);
-    // remove: window.interruptBuffer = interruptBuffer;
-    // remove: pyodideWorker.postMessage({cmd: "setInterruptBuffer", interruptBuffer: interruptBufferRaw});
-    // remove: clearInterruptBuffer();
 
     window.pyodideWorker = pyodideWorker;
 
@@ -45,11 +38,13 @@ const setupWorker = () => {
             if (command == 'put_down()') {
                 put_down(event.data.arg); // counterclockwise
             }
+            if (command == 'pick_up()') {
+                pick_up(event.data.arg); // counterclockwise
+            }
             return;
         }
         if (event.data.outputText !== undefined) {
             console.log(event.data.outputText);
-            return; // remove
             const terminal = document.getElementById('console-output');
             terminal.value += event.data.outputText;
             terminal.blur();
@@ -112,7 +107,6 @@ const passSharedBuffer = (buf, waitBuf) => {
 const asyncRun = ((script, context, stepSleep=50) => {
     let id = 0; // identify a Promise
     return (script, context, stepSleep) => {
-        // remove: clearInterruptBuffer();
         // the id could be generated more carefully
         id = (id + 1) % Number.MAX_SAFE_INTEGER;
         window.codeRunning = true;
@@ -159,4 +153,9 @@ const getInputFromTerminal = () => {
     terminal.addEventListener('input', consoleListener, false);
 }
 
-export { setupWorker, asyncRun, sendMessageToWorker, interruptExecution  };
+const updateSpeed = () => {
+    const speed = document.querySelector('#speed-slider').value;
+    pyodideWorker.postMessage({cmd: "run_speed", stepSleep:speed});
+}
+
+export { setupWorker, asyncRun, sendMessageToWorker, interruptExecution, updateSpeed };
