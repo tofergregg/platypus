@@ -504,7 +504,8 @@ const mouseDown = (event) => {
 
 async function python_runner(script, context) {
     try {
-        const { results, error } = await asyncRun(script, context);
+        const stepSpeed = document.querySelector('#speed-slider').value;
+        const { results, error } = await asyncRun(script, context, stepSpeed);
         if (results) {
             console.log("pyodideWorker return results: ", results);
         } else if (error) {

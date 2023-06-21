@@ -65,7 +65,8 @@ self.onmessage = async (event) => {
     await pyodideReadyPromise;
     self.pyodide.setInterruptBuffer(self.interruptBuffer);
     // Don't bother yet with this line, suppose our API is built in such a way:
-    let { id, python, ...context } = event.data;
+    let { id, python, stepSleep, ...context } = event.data;
+    this.stepSleep = stepSleep;
     // The worker copies the context in its own "memory" (an object mapping name to values)
     for (const key of Object.keys(context)) {
         self[key] = context[key];
@@ -199,21 +200,22 @@ function check_for_stop() {
 
 // platypus commands
 async function turn_right() {
-    await sleep_fixed(0.3);
+    await sleep_fixed(0.3 * 50 / this.stepSleep);
     self.postMessage({platypusCommand: 'turn_right()'});
 }
 
 async function turn_left() {
-    await sleep_fixed(0.3);
+    await sleep_fixed(0.3 * 50 / this.stepSleep);
     self.postMessage({platypusCommand: 'turn_left()'});
 }
 
 async function swim() {
-    await sleep_fixed(0.3);
+    await sleep_fixed(0.3 * 50 / this.stepSleep);
+    console.log(this.stepSleep);
     self.postMessage({platypusCommand: 'swim()'});
 }
 
 async function put_down(obj) {
-    await sleep_fixed(0.3);
+    await sleep_fixed(0.3 * this.stepSleep / 50);
     self.postMessage({platypusCommand: 'put_down()', arg: obj});
 }

@@ -2,6 +2,9 @@
 <html>
     <head>
         <meta charset="UTF-8">
+        <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+        <meta http-equiv="Pragma" content="no-cache" />
+        <meta http-equiv="Expires" content="0" />
         <title>Kira Platypus</title>
         <link href="https://fonts.googleapis.com/css2?family=Abel&display=swap" rel="stylesheet">
         <link href="css/site.css" rel="stylesheet">
@@ -22,6 +25,8 @@
             </div>
             <div class='child'>
                 <canvas id="gridCanvas"></canvas>
+                <br>
+                Speed: <input type="range" id="speed-slider" min="10" max="1000" value="50">
             </div>
             <div class='child'>
                 <button onclick="rotatePlatypus(true)">turn_right()</button>&nbsp;
