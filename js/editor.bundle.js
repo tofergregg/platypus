@@ -19306,6 +19306,13 @@
        { key: "Mod-/", run: toggleComment },
        { key: "Alt-A", run: toggleBlockComment }
    ].concat(standardKeymap);
+   /**
+   A binding that binds Tab to [`indentMore`](https://codemirror.net/6/docs/ref/#commands.indentMore) and
+   Shift-Tab to [`indentLess`](https://codemirror.net/6/docs/ref/#commands.indentLess).
+   Please see the [Tab example](../../examples/tab/) before using
+   this.
+   */
+   const indentWithTab = { key: "Tab", run: indentMore, shift: indentLess };
 
    function crelt() {
      var elt = arguments[0];
@@ -25107,6 +25114,7 @@
    let editor = new EditorView({
        extensions: [
            basicSetup, 
+           keymap.of([indentWithTab]),
            python(),
            autocompletion({activateOnTyping: false}),
            indentUnit.of("    "),

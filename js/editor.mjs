@@ -1,8 +1,10 @@
 import {basicSetup, EditorView} from "codemirror"
+import {keymap} from "@codemirror/view"
 import {python} from "@codemirror/lang-python"
 import {EditorState} from "@codemirror/state"
 import {autocompletion} from "@codemirror/autocomplete"
 import {indentUnit} from "@codemirror/language"
+import {indentWithTab} from "@codemirror/commands"
 
 let editorTheme = EditorView.theme(
     {  '&': { maxHeight: '200px' },
@@ -13,6 +15,7 @@ let editorTheme = EditorView.theme(
 let editor = new EditorView({
     extensions: [
         basicSetup, 
+        keymap.of([indentWithTab]),
         python(),
         autocompletion({activateOnTyping: false}),
         indentUnit.of("    "),

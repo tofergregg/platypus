@@ -514,14 +514,15 @@ async function python_runner(script, context) {
             // put partial error in the terminal
             if (error.startsWith('Traceback')) {
                 const firstNewline = error.indexOf('\n');
-                const firstUsefulError = error.indexOf('  File "<exec>"');
+                const firstUsefulError = error.lastIndexOf('\n', error.indexOf('___WRAPPER'));
                 const terminal = document.getElementById("console-output");
-                terminal.value += '\n' + error.substring(0, firstNewline + 1) 
+                let usefulMessage = '\n' + error.substring(0, firstNewline + 1) 
                     + error.substring(firstUsefulError);
+                usefulMessage = updateLineNumbers(usefulMessage, 27);
+                terminal.value += usefulMessage;
                 terminal.blur();
                 terminal.focus();
             }
-            clearInterruptBuffer();
         }
     } catch (e) {
         console.log(
@@ -529,6 +530,18 @@ async function python_runner(script, context) {
         );
     }
 }
+
+const updateLineNumbers = (text, lineDiff) => {
+    let linePos = text.indexOf('line ');
+    while (linePos != -1) {
+        const commaPos = text.indexOf(',', linePos);
+        const newLineNum = lineDiff - parseInt(text.substring(linePos + 'line '.length, commaPos));
+        text = text.substring(0, linePos + 'line '.length) + newLineNum.toString() + text.substr(commaPos);
+        linePos = text.indexOf('line ', linePos + 1);
+    }
+    return text;
+}
+
 
 ///// 
 
@@ -636,34 +649,10 @@ const wrap_code = (code) => {
 from js import sleep_fixed
 from js import check_for_stop
 
-def my_tracer(frame, event, arg = None):
-    asyncio.ensure_future(async_tracer())
-    if stop_code():
-        print("stopping in python")
-        raise KeyboardInterrupt
-    # extracts frame code
-    code = frame.f_code
-
-    # extracts calling function name
-    func_name = code.co_name
-
-    # extracts the line number
-    line_no = frame.f_lineno
-
-    # print(f"A {event} encountered in \
-    #{code}() at line number {line_no} ")
-
-    return my_tracer
-
 async def ___WRAPPER():
     `;
     const suffix_code = `
-# key=lambda: (await my_tracer() for _ in '_').__anext__()
-# sys.settrace(my_tracer)
-global _STOP_COUNTER_
-_STOP_COUNTER_ = 0
 await ___WRAPPER()
-# sys.settrace(None)
 `; 
 
     code = prefix_code + code + suffix_code;
