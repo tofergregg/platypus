@@ -503,7 +503,7 @@ const mouseDown = (event) => {
     window.lastMouseDown = {x: x, y: y};
 }
 
-async function python_runner(script, context) {
+async function python_runner(script, context, lineMap) {
     try {
         const stepSpeed = document.querySelector('#speed-slider').value;
         const { results, error } = await asyncRun(script, context, stepSpeed);
@@ -518,7 +518,7 @@ async function python_runner(script, context) {
                 const terminal = document.getElementById("console-output");
                 let usefulMessage = '\n' + error.substring(0, firstNewline + 1) 
                     + error.substring(firstUsefulError);
-                usefulMessage = updateLineNumbers(usefulMessage, 27);
+                usefulMessage = updateLineNumbers(usefulMessage, lineMap);
                 terminal.value += usefulMessage;
                 terminal.blur();
                 terminal.focus();
@@ -531,14 +531,19 @@ async function python_runner(script, context) {
     }
 }
 
-const updateLineNumbers = (text, lineDiff) => {
+const updateLineNumbers = (text, lineMap) => {
     let linePos = text.indexOf('line ');
     while (linePos != -1) {
         const commaPos = text.indexOf(',', linePos);
-        const newLineNum = lineDiff - parseInt(text.substring(linePos + 'line '.length, commaPos));
+        const oldLineNum = parseInt(text.substring(linePos + 'line '.length, commaPos));
+        let newLineNum = '??';
+        if (lineMap.has(oldLineNum)) {
+            newLineNum = lineMap.get(oldLineNum);
+        }
         text = text.substring(0, linePos + 'line '.length) + newLineNum.toString() + text.substr(commaPos);
         linePos = text.indexOf('line ', linePos + 1);
     }
+    text = text.replace('___WRAPPER', 'Platypus');
     return text;
 }
 
@@ -618,12 +623,14 @@ window.run_pyodide = async () => {
     window.reset_platypus();
     const context = {}; // we might use this to pass parameters to a program,
     // e.g. { name: "Chris", num: 5, arr: [1, 2, 3], }
-    let code = window.cmEditor.state.doc.toString();
-    code = await transform_code_for_async(code);
-    if (code == "") {
+    const originalCode = window.cmEditor.state.doc.toString();
+    let transformedCode = await transform_code_for_async(originalCode);
+    if (transformedCode == "") {
         return;
     }
-    code = wrap_code(code);
+    transformedCode = wrap_code(transformedCode);
+    const lineMap = findClosestMatches(transformedCode, originalCode);
+    
     // only run python_runner if we've stopped execution
     const python_runner_fn = () => {
         if (window.codeRunning) {
@@ -633,10 +640,79 @@ window.run_pyodide = async () => {
             window.stopExecution = false;
 
             document.getElementById('console-output').value = '';
-            python_runner(code, context);
+            python_runner(transformedCode, context, lineMap);
         }
     }
     setTimeout(python_runner_fn, 100);
+}
+
+// calculate the "distance" between two strings
+// code by ChatGPT: 
+// https://chat.openai.com/share/60685c00-9ded-4c70-98be-d891b099b40b
+const calculateLevenshteinDistance = (str1, str2) => {
+    // Create a 2D array to store the distances
+    const distances = Array(str1.length + 1)
+        .fill(null)
+        .map(() => Array(str2.length + 1).fill(null));
+
+    // Initialize the first row and column of the array
+    for (let i = 0; i <= str1.length; i++) {
+        distances[i][0] = i;
+    }
+    for (let j = 0; j <= str2.length; j++) {
+        distances[0][j] = j;
+    }
+
+    // Calculate the Levenshtein distance
+    for (let i = 1; i <= str1.length; i++) {
+        for (let j = 1; j <= str2.length; j++) {
+            const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
+            distances[i][j] = Math.min(
+                distances[i - 1][j] + 1, // deletion
+                distances[i][j - 1] + 1, // insertion
+                distances[i - 1][j - 1] + cost // substitution
+            );
+        }
+    }
+
+    // Return the final Levenshtein distance
+    const levLen = distances[str1.length][str2.length]
+    return levLen;
+}
+
+function findClosestMatches(transformedCode, originalCode) {
+    const transformedLines = transformedCode.split('\n');
+    const originalLines = originalCode.split('\n');
+    // transformed will not have comments, and whitespace may be different.
+    // we want to match each line in transformed with a line in original,
+    // although there won't be as many lines in the original
+    const closestMatches = new Map();
+
+    // iterate over the lines in transformedLines
+    let nextOrigIndex = 0;
+    for (let i = 0; i < transformedLines.length; i++) {
+        let transformedLine = transformedLines[i];
+        // if the line doesn't start with four spaces, it isn't the original
+        if (!transformedLine.startsWith('    ')) {
+            continue;
+        }
+        // let's remove the "async" and "await " 
+        // and four spaces of whitespace because we added a bunch
+        transformedLine = transformedLines[i].replace('await ', '').replace('async ', '').substr(4);
+        // check each line in orig, starting with the line we left off at
+        for (let j = nextOrigIndex; j < originalLines.length; j++) {
+            const originalLine = originalLines[j];
+            const dist = calculateLevenshteinDistance(transformedLine, originalLine);
+            if (dist == 0) {
+                // found a match!
+                nextOrigIndex = j;
+                closestMatches.set(i + 1, j + 1);
+                break;
+            }
+        }
+    }
+
+    return closestMatches;
 }
 
 const wrap_code = (code) => {
