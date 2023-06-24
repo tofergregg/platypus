@@ -219,11 +219,11 @@ async function swim() {
 }
 
 async function put_down(obj) {
-    await sleep_fixed(0.3 * this.stepSleep / 50);
+    await sleep_fixed(0.3 * 50 / this.stepSleep);
     self.postMessage({platypusCommand: 'put_down()', arg: obj});
 }
 
 async function pick_up(obj) {
-    await sleep_fixed(0.3 * this.stepSleep / 50);
+    await sleep_fixed(0.3 * 50 / this.stepSleep);
     self.postMessage({platypusCommand: 'pick_up()', arg: obj});
 }
