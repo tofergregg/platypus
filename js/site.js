@@ -358,13 +358,12 @@ const loadWorld = async (url, eraseCode) => {
 }
 window.loadWorld = loadWorld;
 
-const pick_up = () => {
-    // can only eat crabs
+const pick_up = (item) => {
     const loc = gridLoc(platypus.row, platypus.col);
     const objects = world.grid[loc].objects
-    if (objects.indexOf('c') != -1) {
+    if (objects.indexOf(item[0]) != -1) {
         removeObjectFromWorld(platypus.row, platypus.col, 'c')
-        addCommandToProgram('pick_up()');
+        addCommandToProgram("pick_up('" + item + "')");
         return true;
     } else {
         return false;
@@ -398,8 +397,8 @@ const addObjectToWorld = (row, col, obj) => {
 }
 
 const addCommandToProgram = (command) => {
-    if (!window.codeRunning) {
-        // only add if we aren't running
+    if (!window.codeRunning && document.querySelector('#interactive').checked) {
+        // only add if we aren't running and if the button is checked
         let editor = window.cmEditor;
         const newCode = editor.state.doc.toString() + command + '\n';
         editor.dispatch({
@@ -597,9 +596,13 @@ transform_to_async(the_code)
     return transformed_code;
 }
 
+window.reset_platypus = () => {
+    loadWorld(world.url, false); // do not clear program
+}
+
 window.run_pyodide = async () => {
     window.reset_console();
-    loadWorld(world.url, false); // do not clear program
+    window.reset_platypus();
     const context = {}; // we might use this to pass parameters to a program,
     // e.g. { name: "Chris", num: 5, arr: [1, 2, 3], }
     let code = window.cmEditor.state.doc.toString();

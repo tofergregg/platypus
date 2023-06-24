@@ -2,6 +2,12 @@ body {
     font: normal 18px Abel, sans-serif;
 }
 
+button {
+    font-family: monospace;
+    font-size: 12px;
+}
+
+
 .editor-div {
     width: 600px;
     border: 1px solid black;
@@ -20,6 +26,10 @@ body {
   vertical-align: top;
 }
 
+#add-to-code-text {
+    font-size: 16px;
+}
+
 #left-panel {
     width: 20%;
 }
@@ -29,5 +39,5 @@ body {
 }
 
 #speed-slider {
-    width:50%;
+    width:60%;
 }

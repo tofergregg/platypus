@@ -6,10 +6,6 @@
    */
    class Text {
        /**
-       @internal
-       */
-       constructor() { }
-       /**
        Get the line description around the given position.
        */
        lineAt(pos) {
@@ -103,7 +99,8 @@
            return new LineCursor(inner);
        }
        /**
-       @internal
+       Return the document as a string, using newline characters to
+       separate lines.
        */
        toString() { return this.sliceString(0); }
        /**
@@ -115,6 +112,10 @@
            this.flatten(lines);
            return lines;
        }
+       /**
+       @internal
+       */
+       constructor() { }
        /**
        Create a `Text` instance for the given array of lines.
        */
@@ -2159,7 +2160,10 @@
        is(type) { return this.type == type; }
        /**
        Define a new effect type. The type parameter indicates the type
-       of values that his effect holds.
+       of values that his effect holds. It should be a type that
+       doesn't include `undefined`, since that is used in
+       [mapping](https://codemirror.net/6/docs/ref/#state.StateEffect.map) to indicate that an effect is
+       removed.
        */
        static define(spec = {}) {
            return new StateEffectType(spec.map || (v => v));
@@ -3056,7 +3060,7 @@
        @internal
        */
        static create(from, to, value) {
-           return new Range$1(from, to, value);
+           return new Range(from, to, value);
        }
    };
    function cmpRange(a, b) {
@@ -3302,8 +3306,7 @@
        static compare(oldSets, newSets, 
        /**
        This indicates how the underlying data changed between these
-       ranges, and is needed to synchronize the iteration. `from` and
-       `to` are coordinates in the _new_ space, after these changes.
+       ranges, and is needed to synchronize the iteration.
        */
        textDiff, comparator, 
        /**
@@ -3414,6 +3417,18 @@
    an array of [`Range`](https://codemirror.net/6/docs/ref/#state.Range) objects.
    */
    class RangeSetBuilder {
+       finishChunk(newArrays) {
+           this.chunks.push(new Chunk(this.from, this.to, this.value, this.maxPoint));
+           this.chunkPos.push(this.chunkStart);
+           this.chunkStart = -1;
+           this.setMaxPoint = Math.max(this.setMaxPoint, this.maxPoint);
+           this.maxPoint = -1;
+           if (newArrays) {
+               this.from = [];
+               this.to = [];
+               this.value = [];
+           }
+       }
        /**
        Create an empty builder.
        */
@@ -3430,18 +3445,6 @@
            this.maxPoint = -1;
            this.setMaxPoint = -1;
            this.nextLayer = null;
-       }
-       finishChunk(newArrays) {
-           this.chunks.push(new Chunk(this.from, this.to, this.value, this.maxPoint));
-           this.chunkPos.push(this.chunkStart);
-           this.chunkStart = -1;
-           this.setMaxPoint = Math.max(this.setMaxPoint, this.maxPoint);
-           this.maxPoint = -1;
-           if (newArrays) {
-               this.from = [];
-               this.to = [];
-               this.value = [];
-           }
        }
        /**
        Add a range. Ranges should be added in sorted (by `from` and
@@ -3802,7 +3805,7 @@
            let end = diff < 0 ? a.to + dPos : b.to, clipEnd = Math.min(end, endB);
            if (a.point || b.point) {
                if (!(a.point && b.point && (a.point == b.point || a.point.eq(b.point)) &&
-                   sameValues(a.activeForPoint(a.to + dPos), b.activeForPoint(b.to))))
+                   sameValues(a.activeForPoint(a.to), b.activeForPoint(b.to))))
                    comparator.comparePoint(pos, clipEnd, a.point, b.point);
            }
            else {
@@ -3965,20 +3968,22 @@
      }
    }
 
-   let adoptedSet = null;
+   let adoptedSet = new Map; //<Document, StyleSet>
 
    class StyleSet {
      constructor(root) {
-       if (!root.head && root.adoptedStyleSheets && typeof CSSStyleSheet != "undefined") {
-         if (adoptedSet) {
-           root.adoptedStyleSheets = [adoptedSet.sheet].concat(root.adoptedStyleSheets);
-           return root[SET] = adoptedSet
+       let doc = root.ownerDocument || root, win = doc.defaultView;
+       if (!root.head && root.adoptedStyleSheets && win.CSSStyleSheet) {
+         let adopted = adoptedSet.get(doc);
+         if (adopted) {
+           root.adoptedStyleSheets = [adopted.sheet, ...root.adoptedStyleSheets];
+           return root[SET] = adopted
          }
-         this.sheet = new CSSStyleSheet;
-         root.adoptedStyleSheets = [this.sheet].concat(root.adoptedStyleSheets);
-         adoptedSet = this;
+         this.sheet = new win.CSSStyleSheet;
+         root.adoptedStyleSheets = [this.sheet, ...root.adoptedStyleSheets];
+         adoptedSet.set(doc, this);
        } else {
-         this.styleTag = (root.ownerDocument || root).createElement("style");
+         this.styleTag = doc.createElement("style");
          let target = root.head || root;
          target.insertBefore(this.styleTag, target.firstChild);
        }
@@ -4124,10 +4129,8 @@
      222: "\""
    };
 
-   var chrome$1 = typeof navigator != "undefined" && /Chrome\/(\d+)/.exec(navigator.userAgent);
    var mac = typeof navigator != "undefined" && /Mac/.test(navigator.platform);
    var ie$1 = typeof navigator != "undefined" && /MSIE \d|Trident\/(?:[7-9]|\d{2,})\..*rv:(\d+)/.exec(navigator.userAgent);
-   var brokenModifierNames = mac || chrome$1 && +chrome$1[1] < 57;
 
    // Fill in the digit keys
    for (var i = 0; i < 10; i++) base[48 + i] = base[96 + i] = String(i);
@@ -4145,9 +4148,11 @@
    for (var code in base) if (!shift.hasOwnProperty(code)) shift[code] = base[code];
 
    function keyName(event) {
-     var ignoreKey = brokenModifierNames && (event.ctrlKey || event.altKey || event.metaKey) ||
-       ie$1 && event.shiftKey && event.key && event.key.length == 1 ||
-       event.key == "Unidentified";
+     // On macOS, keys held with Shift and Cmd don't reflect the effect of Shift in `.key`.
+     // On IE, shift effect is never included in `.key`.
+     var ignoreKey = mac && event.metaKey && event.shiftKey && !event.ctrlKey && !event.altKey ||
+         ie$1 && event.shiftKey && event.key && event.key.length == 1 ||
+         event.key == "Unidentified";
      var name = (!ignoreKey && event.key) ||
        (event.shiftKey ? shift : base)[event.keyCode] ||
        event.key || "Unidentified";
@@ -4246,7 +4251,6 @@
    function maxOffset(node) {
        return node.nodeType == 3 ? node.nodeValue.length : node.childNodes.length;
    }
-   const Rect0 = { left: 0, right: 0, top: 0, bottom: 0 };
    function flattenRect(rect, left) {
        let x = left ? rect.left : rect.right;
        return { left: x, right: x, top: rect.top, bottom: rect.bottom };
@@ -4379,7 +4383,9 @@
                this.focusNode == domSel.focusNode && this.focusOffset == domSel.focusOffset;
        }
        setRange(range) {
-           this.set(range.anchorNode, range.anchorOffset, range.focusNode, range.focusOffset);
+           let { anchorNode, focusNode } = range;
+           // Clip offsets to node size to avoid crashes when Safari reports bogus offsets (#1152)
+           this.set(anchorNode, Math.min(range.anchorOffset, anchorNode ? maxOffset(anchorNode) : 0), focusNode, Math.min(range.focusOffset, focusNode ? maxOffset(focusNode) : 0));
        }
        set(anchorNode, anchorOffset, focusNode, focusOffset) {
            this.anchorNode = anchorNode;
@@ -4452,6 +4458,8 @@
        let node = selection.focusNode, offset = selection.focusOffset;
        if (!node || selection.anchorNode != node || selection.anchorOffset != offset)
            return false;
+       // Safari can report bogus offsets (#1152)
+       offset = Math.min(offset, maxOffset(node));
        for (;;) {
            if (offset) {
                if (node.nodeType != 1)
@@ -4488,12 +4496,7 @@
        constructor() {
            this.parent = null;
            this.dom = null;
-           this.dirty = 2 /* Dirty.Node */;
-       }
-       get editorView() {
-           if (!this.parent)
-               throw new Error("Accessing view in orphan content view");
-           return this.parent.editorView;
+           this.dirty = 2 /* Node */;
        }
        get overrideDOMText() { return null; }
        get posAtStart() {
@@ -4514,12 +4517,8 @@
        posAfter(view) {
            return this.posBefore(view) + view.length;
        }
-       // Will return a rectangle directly before (when side < 0), after
-       // (side > 0) or directly on (when the browser supports it) the
-       // given position.
-       coordsAt(_pos, _side) { return null; }
-       sync(track) {
-           if (this.dirty & 2 /* Dirty.Node */) {
+       sync(view, track) {
+           if (this.dirty & 2 /* Node */) {
                let parent = this.dom;
                let prev = null, next;
                for (let child of this.children) {
@@ -4529,8 +4528,8 @@
                            if (!contentView || !contentView.parent && contentView.canReuseDOM(child))
                                child.reuseDOM(next);
                        }
-                       child.sync(track);
-                       child.dirty = 0 /* Dirty.Not */;
+                       child.sync(view, track);
+                       child.dirty = 0 /* Not */;
                    }
                    next = prev ? prev.nextSibling : parent.firstChild;
                    if (track && !track.written && track.node == parent && next != child.dom)
@@ -4550,11 +4549,11 @@
                while (next)
                    next = rm$1(next);
            }
-           else if (this.dirty & 1 /* Dirty.Child */) {
+           else if (this.dirty & 1 /* Child */) {
                for (let child of this.children)
                    if (child.dirty) {
-                       child.sync(track);
-                       child.dirty = 0 /* Dirty.Not */;
+                       child.sync(view, track);
+                       child.dirty = 0 /* Not */;
                    }
            }
        }
@@ -4619,16 +4618,16 @@
                endDOM: toI < this.children.length && toI >= 0 ? this.children[toI].dom : null };
        }
        markDirty(andParent = false) {
-           this.dirty |= 2 /* Dirty.Node */;
+           this.dirty |= 2 /* Node */;
            this.markParentsDirty(andParent);
        }
        markParentsDirty(childList) {
            for (let parent = this.parent; parent; parent = parent.parent) {
                if (childList)
-                   parent.dirty |= 2 /* Dirty.Node */;
-               if (parent.dirty & 1 /* Dirty.Child */)
+                   parent.dirty |= 2 /* Node */;
+               if (parent.dirty & 1 /* Child */)
                    return;
-               parent.dirty |= 1 /* Dirty.Child */;
+               parent.dirty |= 1 /* Child */;
                childList = false;
            }
        }
@@ -4680,6 +4679,8 @@
        }
        static get(node) { return node.cmView; }
        get isEditable() { return true; }
+       get isWidget() { return false; }
+       get isHidden() { return false; }
        merge(from, to, source, hasStart, openStart, openEnd) {
            return false;
        }
@@ -4847,7 +4848,7 @@
        createDOM(textDOM) {
            this.setDOM(textDOM || document.createTextNode(this.text));
        }
-       sync(track) {
+       sync(view, track) {
            if (!this.dom)
                this.createDOM();
            if (this.dom.nodeValue != this.text) {
@@ -4905,15 +4906,15 @@
        reuseDOM(node) {
            if (node.nodeName == this.mark.tagName.toUpperCase()) {
                this.setDOM(node);
-               this.dirty |= 4 /* Dirty.Attrs */ | 2 /* Dirty.Node */;
+               this.dirty |= 4 /* Attrs */ | 2 /* Node */;
            }
        }
-       sync(track) {
+       sync(view, track) {
            if (!this.dom)
                this.setDOM(this.setAttrs(document.createElement(this.mark.tagName)));
-           else if (this.dirty & 4 /* Dirty.Attrs */)
+           else if (this.dirty & 4 /* Attrs */)
                this.setAttrs(this.dom);
-           super.sync(track);
+           super.sync(view, track);
        }
        merge(from, to, source, _hasStart, openStart, openEnd) {
            if (source && (!(source instanceof MarkView && source.mark.eq(this.mark)) ||
@@ -4974,7 +4975,7 @@
        }
        let rects = textRange(text, from, to).getClientRects();
        if (!rects.length)
-           return Rect0;
+           return null;
        let rect = rects[(flatten ? flatten < 0 : side >= 0) ? 0 : rects.length - 1];
        if (browser.safari && !flatten && rect.width == 0)
            rect = Array.prototype.find.call(rects, r => r.width) || rect;
@@ -4997,12 +4998,12 @@
            this.length -= from;
            return result;
        }
-       sync() {
-           if (!this.dom || !this.widget.updateDOM(this.dom)) {
+       sync(view) {
+           if (!this.dom || !this.widget.updateDOM(this.dom, view)) {
                if (this.dom && this.prevWidget)
                    this.prevWidget.destroy(this.dom);
                this.prevWidget = null;
-               this.setDOM(this.widget.toDOM(this.editorView));
+               this.setDOM(this.widget.toDOM(view));
                this.dom.contentEditable = "false";
            }
        }
@@ -5015,15 +5016,15 @@
            return true;
        }
        become(other) {
-           if (other.length == this.length && other instanceof WidgetView && other.side == this.side) {
-               if (this.widget.constructor == other.widget.constructor) {
-                   if (!this.widget.eq(other.widget))
-                       this.markDirty(true);
-                   if (this.dom && !this.prevWidget)
-                       this.prevWidget = this.widget;
-                   this.widget = other.widget;
-                   return true;
-               }
+           if (other instanceof WidgetView && other.side == this.side &&
+               this.widget.constructor == other.widget.constructor) {
+               if (!this.widget.compare(other.widget))
+                   this.markDirty(true);
+               if (this.dom && !this.prevWidget)
+                   this.prevWidget = this.widget;
+               this.widget = other.widget;
+               this.length = other.length;
+               return true;
            }
            return false;
        }
@@ -5035,25 +5036,33 @@
            let top = this;
            while (top.parent)
                top = top.parent;
-           let view = top.editorView, text = view && view.state.doc, start = this.posAtStart;
+           let { view } = top, text = view && view.state.doc, start = this.posAtStart;
            return text ? text.slice(start, start + this.length) : Text.empty;
        }
        domAtPos(pos) {
-           return pos == 0 ? DOMPos.before(this.dom) : DOMPos.after(this.dom, pos == this.length);
+           return (this.length ? pos == 0 : this.side > 0)
+               ? DOMPos.before(this.dom)
+               : DOMPos.after(this.dom, pos == this.length);
        }
        domBoundsAround() { return null; }
        coordsAt(pos, side) {
+           let custom = this.widget.coordsAt(this.dom, pos, side);
+           if (custom)
+               return custom;
            let rects = this.dom.getClientRects(), rect = null;
            if (!rects.length)
-               return Rect0;
-           for (let i = pos > 0 ? rects.length - 1 : 0;; i += (pos > 0 ? -1 : 1)) {
+               return null;
+           let fromBack = this.side ? this.side < 0 : pos > 0;
+           for (let i = fromBack ? rects.length - 1 : 0;; i += (fromBack ? -1 : 1)) {
                rect = rects[i];
                if (pos > 0 ? i == 0 : i == rects.length - 1 || rect.top < rect.bottom)
                    break;
            }
-           return this.length ? rect : flattenRect(rect, this.side > 0);
+           return flattenRect(rect, !fromBack);
        }
        get isEditable() { return false; }
+       get isWidget() { return true; }
+       get isHidden() { return this.widget.isHidden; }
        destroy() {
            super.destroy();
            if (this.dom)
@@ -5065,14 +5074,14 @@
            let { topView, text } = this.widget;
            if (!topView)
                return new DOMPos(text, Math.min(pos, text.nodeValue.length));
-           return scanCompositionTree(pos, 0, topView, text, (v, p) => v.domAtPos(p), p => new DOMPos(text, Math.min(p, text.nodeValue.length)));
+           return scanCompositionTree(pos, 0, topView, text, this.length - topView.length, (v, p) => v.domAtPos(p), (text, p) => new DOMPos(text, Math.min(p, text.nodeValue.length)));
        }
        sync() { this.setDOM(this.widget.toDOM()); }
        localPosFromDOM(node, offset) {
            let { topView, text } = this.widget;
            if (!topView)
                return Math.min(offset, this.length);
-           return posFromDOMInCompositionTree(node, offset, topView, text);
+           return posFromDOMInCompositionTree(node, offset, topView, text, this.length - topView.length);
        }
        ignoreMutation() { return false; }
        get overrideDOMText() { return null; }
@@ -5080,7 +5089,7 @@
            let { topView, text } = this.widget;
            if (!topView)
                return textCoords(text, pos, side);
-           return scanCompositionTree(pos, side, topView, text, (v, pos, side) => v.coordsAt(pos, side), (pos, side) => textCoords(text, pos, side));
+           return scanCompositionTree(pos, side, topView, text, this.length - topView.length, (v, pos, side) => v.coordsAt(pos, side), (text, pos, side) => textCoords(text, pos, side));
        }
        destroy() {
            var _a;
@@ -5093,40 +5102,95 @@
    // Uses the old structure of a chunk of content view frozen for
    // composition to try and find a reasonable DOM location for the given
    // offset.
-   function scanCompositionTree(pos, side, view, text, enterView, fromText) {
+   function scanCompositionTree(pos, side, view, text, dLen, enterView, fromText) {
        if (view instanceof MarkView) {
            for (let child = view.dom.firstChild; child; child = child.nextSibling) {
                let desc = ContentView.get(child);
-               if (!desc)
-                   return fromText(pos, side);
-               let hasComp = contains(child, text);
-               let len = desc.length + (hasComp ? text.nodeValue.length : 0);
-               if (pos < len || pos == len && desc.getSide() <= 0)
-                   return hasComp ? scanCompositionTree(pos, side, desc, text, enterView, fromText) : enterView(desc, pos, side);
-               pos -= len;
+               if (!desc) {
+                   let inner = scanCompositionNode(pos, side, child, fromText);
+                   if (typeof inner != "number")
+                       return inner;
+                   pos = inner;
+               }
+               else {
+                   let hasComp = contains(child, text);
+                   let len = desc.length + (hasComp ? dLen : 0);
+                   if (pos < len || pos == len && desc.getSide() <= 0)
+                       return hasComp ? scanCompositionTree(pos, side, desc, text, dLen, enterView, fromText) : enterView(desc, pos, side);
+                   pos -= len;
+               }
            }
            return enterView(view, view.length, -1);
        }
        else if (view.dom == text) {
-           return fromText(pos, side);
+           return fromText(text, pos, side);
        }
        else {
            return enterView(view, pos, side);
        }
    }
-   function posFromDOMInCompositionTree(node, offset, view, text) {
+   function scanCompositionNode(pos, side, node, fromText) {
+       if (node.nodeType == 3) {
+           let len = node.nodeValue.length;
+           if (pos <= len)
+               return fromText(node, pos, side);
+           pos -= len;
+       }
+       else if (node.nodeType == 1 && node.contentEditable != "false") {
+           for (let child = node.firstChild; child; child = child.nextSibling) {
+               let inner = scanCompositionNode(pos, side, child, fromText);
+               if (typeof inner != "number")
+                   return inner;
+               pos = inner;
+           }
+       }
+       return pos;
+   }
+   function posFromDOMInCompositionTree(node, offset, view, text, dLen) {
        if (view instanceof MarkView) {
-           for (let child of view.children) {
-               let pos = 0, hasComp = contains(child.dom, text);
-               if (contains(child.dom, node))
-                   return pos + (hasComp ? posFromDOMInCompositionTree(node, offset, child, text) : child.localPosFromDOM(node, offset));
-               pos += hasComp ? text.nodeValue.length : child.length;
+           let pos = 0;
+           for (let child = view.dom.firstChild; child; child = child.nextSibling) {
+               let childView = ContentView.get(child);
+               if (childView) {
+                   let hasComp = contains(child, text);
+                   if (contains(child, node))
+                       return pos + (hasComp ? posFromDOMInCompositionTree(node, offset, childView, text, dLen)
+                           : childView.localPosFromDOM(node, offset));
+                   pos += childView.length + (hasComp ? dLen : 0);
+               }
+               else {
+                   let inner = posFromDOMInOpaqueNode(node, offset, child);
+                   if (inner.result != null)
+                       return pos + inner.result;
+                   pos += inner.size;
+               }
            }
        }
        else if (view.dom == text) {
            return Math.min(offset, text.nodeValue.length);
        }
        return view.localPosFromDOM(node, offset);
+   }
+   function posFromDOMInOpaqueNode(node, offset, target) {
+       if (target.nodeType == 3) {
+           return node == target ? { result: offset } : { size: target.nodeValue.length };
+       }
+       else if (target.nodeType == 1 && target.contentEditable != "false") {
+           let pos = 0;
+           for (let child = target.firstChild, i = 0;; child = child.nextSibling, i++) {
+               if (node == target && i == offset)
+                   return { result: pos };
+               if (!child)
+                   return { size: pos };
+               let inner = posFromDOMInOpaqueNode(node, offset, child);
+               if (inner.result != null)
+                   return { result: offset + inner.result };
+               pos += inner.size;
+           }
+       }
+       else {
+           return target.contains(node) ? { result: 0 } : { size: 0 };
+       }
    }
    // These are drawn around uneditable widgets to avoid a number of
    // browser bugs that show up when the cursor is directly next to
@@ -5151,47 +5215,18 @@
            }
        }
        getSide() { return this.side; }
-       domAtPos(pos) { return DOMPos.before(this.dom); }
+       domAtPos(pos) { return this.side > 0 ? DOMPos.before(this.dom) : DOMPos.after(this.dom); }
        localPosFromDOM() { return 0; }
        domBoundsAround() { return null; }
        coordsAt(pos) {
-           let imgRect = this.dom.getBoundingClientRect();
-           // Since the <img> height doesn't correspond to text height, try
-           // to borrow the height from some sibling node.
-           let siblingRect = inlineSiblingRect(this, this.side > 0 ? -1 : 1);
-           return siblingRect && siblingRect.top < imgRect.bottom && siblingRect.bottom > imgRect.top
-               ? { left: imgRect.left, right: imgRect.right, top: siblingRect.top, bottom: siblingRect.bottom } : imgRect;
+           return this.dom.getBoundingClientRect();
        }
        get overrideDOMText() {
            return Text.empty;
        }
+       get isHidden() { return true; }
    }
    TextView.prototype.children = WidgetView.prototype.children = WidgetBufferView.prototype.children = noChildren;
-   function inlineSiblingRect(view, side) {
-       let parent = view.parent, index = parent ? parent.children.indexOf(view) : -1;
-       while (parent && index >= 0) {
-           if (side < 0 ? index > 0 : index < parent.children.length) {
-               let next = parent.children[index + side];
-               if (next instanceof TextView) {
-                   let nextRect = next.coordsAt(side < 0 ? next.length : 0, side);
-                   if (nextRect)
-                       return nextRect;
-               }
-               index += side;
-           }
-           else if (parent instanceof MarkView && parent.parent) {
-               index = parent.parent.children.indexOf(parent) + (side < 0 ? 0 : 1);
-               parent = parent.parent;
-           }
-           else {
-               let last = parent.dom.lastChild;
-               if (last && last.nodeName == "BR")
-                   return last.getClientRects()[0];
-               break;
-           }
-       }
-       return undefined;
-   }
    function inlineDOMAtPos(parent, pos) {
        let dom = parent.dom, { children } = parent, i = 0;
        for (let off = 0; i < children.length; i++) {
@@ -5238,11 +5273,12 @@
                    if (child.children.length) {
                        scan(child, pos - off);
                    }
-                   else if (!after && (end > pos || off == end && child.getSide() > 0)) {
+                   else if ((!after || after.isHidden && side > 0) &&
+                       (end > pos || off == end && child.getSide() > 0)) {
                        after = child;
                        afterPos = pos - off;
                    }
-                   else if (off < pos || (off == end && child.getSide() < 0)) {
+                   else if (off < pos || (off == end && child.getSide() < 0) && !child.isHidden) {
                        before = child;
                        beforePos = pos - off;
                    }
@@ -5327,7 +5363,7 @@
        couldn't (in which case the widget will be redrawn). The default
        implementation just returns false.
        */
-       updateDOM(dom) { return false; }
+       updateDOM(dom, view) { return false; }
        /**
        @internal
        */
@@ -5342,15 +5378,34 @@
        */
        get estimatedHeight() { return -1; }
        /**
+       For inline widgets that are displayed inline (as opposed to
+       `inline-block`) and introduce line breaks (through `<br>` tags
+       or textual newlines), this must indicate the amount of line
+       breaks they introduce. Defaults to 0.
+       */
+       get lineBreaks() { return 0; }
+       /**
        Can be used to configure which kinds of events inside the widget
        should be ignored by the editor. The default is to ignore all
        events.
        */
        ignoreEvent(event) { return true; }
        /**
+       Override the way screen coordinates for positions at/in the
+       widget are found. `pos` will be the offset into the widget, and
+       `side` the side of the position that is being queried—less than
+       zero for before, greater than zero for after, and zero for
+       directly at that position.
+       */
+       coordsAt(dom, pos, side) { return null; }
+       /**
        @internal
        */
        get customView() { return null; }
+       /**
+       @internal
+       */
+       get isHidden() { return false; }
        /**
        This is called when the an instance of the widget is removed
        from the editor view.
@@ -5431,8 +5486,10 @@
        given position.
        */
        static widget(spec) {
-           let side = spec.side || 0, block = !!spec.block;
-           side += block ? (side > 0 ? 300000000 /* Side.BlockAfter */ : -400000000 /* Side.BlockBefore */) : (side > 0 ? 100000000 /* Side.InlineAfter */ : -100000000 /* Side.InlineBefore */);
+           let side = Math.max(-10000, Math.min(10000, spec.side || 0)), block = !!spec.block;
+           side += (block && !spec.inlineOrder)
+               ? (side > 0 ? 300000000 /* BlockAfter */ : -400000000 /* BlockBefore */)
+               : (side > 0 ? 100000000 /* InlineAfter */ : -100000000 /* InlineBefore */);
            return new PointDecoration(spec, side, side, block, spec.widget || null, false);
        }
        /**
@@ -5442,13 +5499,13 @@
        static replace(spec) {
            let block = !!spec.block, startSide, endSide;
            if (spec.isBlockGap) {
-               startSide = -500000000 /* Side.GapStart */;
-               endSide = 400000000 /* Side.GapEnd */;
+               startSide = -500000000 /* GapStart */;
+               endSide = 400000000 /* GapEnd */;
            }
            else {
                let { start, end } = getInclusive(spec, block);
-               startSide = (start ? (block ? -300000000 /* Side.BlockIncStart */ : -1 /* Side.InlineIncStart */) : 500000000 /* Side.NonIncStart */) - 1;
-               endSide = (end ? (block ? 200000000 /* Side.BlockIncEnd */ : 1 /* Side.InlineIncEnd */) : -600000000 /* Side.NonIncEnd */) + 1;
+               startSide = (start ? (block ? -300000000 /* BlockIncStart */ : -1 /* InlineIncStart */) : 500000000 /* NonIncStart */) - 1;
+               endSide = (end ? (block ? 200000000 /* BlockIncEnd */ : 1 /* InlineIncEnd */) : -600000000 /* NonIncEnd */) + 1;
            }
            return new PointDecoration(spec, startSide, endSide, block, spec.widget || null, true);
        }
@@ -5479,7 +5536,7 @@
    class MarkDecoration extends Decoration {
        constructor(spec) {
            let { start, end } = getInclusive(spec);
-           super(start ? -1 /* Side.InlineIncStart */ : 500000000 /* Side.NonIncStart */, end ? 1 /* Side.InlineIncEnd */ : -600000000 /* Side.NonIncEnd */, null, spec);
+           super(start ? -1 /* InlineIncStart */ : 500000000 /* NonIncStart */, end ? 1 /* InlineIncEnd */ : -600000000 /* NonIncEnd */, null, spec);
            this.tagName = spec.tagName || "span";
            this.class = spec.class || "";
            this.attrs = spec.attributes || null;
@@ -5500,10 +5557,12 @@
    MarkDecoration.prototype.point = false;
    class LineDecoration extends Decoration {
        constructor(spec) {
-           super(-200000000 /* Side.Line */, -200000000 /* Side.Line */, null, spec);
+           super(-200000000 /* Line */, -200000000 /* Line */, null, spec);
        }
        eq(other) {
-           return other instanceof LineDecoration && attrsEq(this.spec.attributes, other.spec.attributes);
+           return other instanceof LineDecoration &&
+               this.spec.class == other.spec.class &&
+               attrsEq(this.spec.attributes, other.spec.attributes);
        }
        range(from, to = from) {
            if (to != from)
@@ -5525,7 +5584,9 @@
            return this.startSide < this.endSide ? BlockType.WidgetRange
                : this.startSide <= 0 ? BlockType.WidgetBefore : BlockType.WidgetAfter;
        }
-       get heightRelevant() { return this.block || !!this.widget && this.widget.estimatedHeight >= 5; }
+       get heightRelevant() {
+           return this.block || !!this.widget && (this.widget.estimatedHeight >= 5 || this.widget.lineBreaks > 0);
+       }
        eq(other) {
            return other instanceof PointDecoration &&
                widgetsEq(this.widget, other.widget) &&
@@ -5637,17 +5698,17 @@
        reuseDOM(node) {
            if (node.nodeName == "DIV") {
                this.setDOM(node);
-               this.dirty |= 4 /* Dirty.Attrs */ | 2 /* Dirty.Node */;
+               this.dirty |= 4 /* Attrs */ | 2 /* Node */;
            }
        }
-       sync(track) {
+       sync(view, track) {
            var _a;
            if (!this.dom) {
                this.setDOM(document.createElement("div"));
                this.dom.className = "cm-line";
                this.prevAttrs = this.attrs ? null : undefined;
            }
-           else if (this.dirty & 4 /* Dirty.Attrs */) {
+           else if (this.dirty & 4 /* Attrs */) {
                clearAttributes(this.dom);
                this.dom.className = "cm-line";
                this.prevAttrs = this.attrs ? null : undefined;
@@ -5657,7 +5718,7 @@
                this.dom.classList.add("cm-line");
                this.prevAttrs = undefined;
            }
-           super.sync(track);
+           super.sync(view, track);
            let last = this.dom.lastChild;
            while (last && ContentView.get(last) instanceof MarkView)
                last = last.lastChild;
@@ -5672,7 +5733,7 @@
        measureTextSize() {
            if (this.children.length == 0 || this.length > 20)
                return null;
-           let totalWidth = 0;
+           let totalWidth = 0, textHeight;
            for (let child of this.children) {
                if (!(child instanceof TextView) || /[^ -~]/.test(child.text))
                    return null;
@@ -5680,14 +5741,26 @@
                if (rects.length != 1)
                    return null;
                totalWidth += rects[0].width;
+               textHeight = rects[0].height;
            }
            return !totalWidth ? null : {
                lineHeight: this.dom.getBoundingClientRect().height,
-               charWidth: totalWidth / this.length
+               charWidth: totalWidth / this.length,
+               textHeight
            };
        }
        coordsAt(pos, side) {
-           return coordsInChildren(this, pos, side);
+           let rect = coordsInChildren(this, pos, side);
+           // Correct rectangle height for empty lines when the returned
+           // height is larger than the text height.
+           if (!this.children.length && rect && this.parent) {
+               let { heightOracle } = this.parent.view.viewState, height = rect.bottom - rect.top;
+               if (Math.abs(height - heightOracle.lineHeight) < 2 && heightOracle.textHeight < height) {
+                   let dist = (height - heightOracle.textHeight) / 2;
+                   return { top: rect.top + dist, bottom: rect.bottom - dist, left: rect.left, right: rect.left };
+               }
+           }
+           return rect;
        }
        become(_other) { return false; }
        get type() { return BlockType.Text; }
@@ -5732,12 +5805,12 @@
            return end;
        }
        get children() { return noChildren; }
-       sync() {
-           if (!this.dom || !this.widget.updateDOM(this.dom)) {
+       sync(view) {
+           if (!this.dom || !this.widget.updateDOM(this.dom, view)) {
                if (this.dom && this.prevWidget)
                    this.prevWidget.destroy(this.dom);
                this.prevWidget = null;
-               this.setDOM(this.widget.toDOM(this.editorView));
+               this.setDOM(this.widget.toDOM(view));
                this.dom.contentEditable = "false";
            }
        }
@@ -5746,14 +5819,15 @@
        }
        domBoundsAround() { return null; }
        become(other) {
-           if (other instanceof BlockWidgetView && other.type == this.type &&
+           if (other instanceof BlockWidgetView &&
                other.widget.constructor == this.widget.constructor) {
-               if (!other.widget.eq(this.widget))
+               if (!other.widget.compare(this.widget))
                    this.markDirty(true);
                if (this.dom && !this.prevWidget)
                    this.prevWidget = this.widget;
                this.widget = other.widget;
                this.length = other.length;
+               this.type = other.type;
                this.breakAfter = other.breakAfter;
                return true;
            }
@@ -5761,6 +5835,11 @@
        }
        ignoreMutation() { return true; }
        ignoreEvent(event) { return this.widget.ignoreEvent(event); }
+       get isEditable() { return false; }
+       get isWidget() { return true; }
+       coordsAt(pos, side) {
+           return this.widget.coordsAt(this.dom, pos, side);
+       }
        destroy() {
            super.destroy();
            if (this.dom)
@@ -5777,7 +5856,7 @@
            this.content = [];
            this.curLine = null;
            this.breakAtStart = 0;
-           this.pendingBuffer = 0 /* Buf.No */;
+           this.pendingBuffer = 0 /* No */;
            this.bufferMarks = [];
            // Set to false directly after a widget that covers the position after it
            this.atCursorPos = true;
@@ -5804,7 +5883,7 @@
        flushBuffer(active = this.bufferMarks) {
            if (this.pendingBuffer) {
                this.curLine.append(wrapMarks(new WidgetBufferView(-1), active), active.length);
-               this.pendingBuffer = 0 /* Buf.No */;
+               this.pendingBuffer = 0 /* No */;
            }
        }
        addBlockWidget(view) {
@@ -5816,7 +5895,7 @@
            if (this.pendingBuffer && openEnd <= this.bufferMarks.length)
                this.flushBuffer();
            else
-               this.pendingBuffer = 0 /* Buf.No */;
+               this.pendingBuffer = 0 /* No */;
            if (!this.posCovered())
                this.getLine();
        }
@@ -5845,7 +5924,7 @@
                        this.textOff = 0;
                    }
                }
-               let take = Math.min(this.text.length - this.textOff, length, 512 /* T.Chunk */);
+               let take = Math.min(this.text.length - this.textOff, length, 512 /* Chunk */);
                this.flushBuffer(active.slice(active.length - openStart));
                this.getLine().append(wrapMarks(new TextView(this.text.slice(this.textOff, this.textOff + take)), active), openStart);
                this.atCursorPos = true;
@@ -5877,11 +5956,12 @@
                }
                else {
                    let view = WidgetView.create(deco.widget || new NullWidget("span"), len, len ? 0 : deco.startSide);
-                   let cursorBefore = this.atCursorPos && !view.isEditable && openStart <= active.length && (from < to || deco.startSide > 0);
+                   let cursorBefore = this.atCursorPos && !view.isEditable && openStart <= active.length &&
+                       (from < to || deco.startSide > 0);
                    let cursorAfter = !view.isEditable && (from < to || openStart > active.length || deco.startSide <= 0);
                    let line = this.getLine();
-                   if (this.pendingBuffer == 2 /* Buf.IfCursor */ && !cursorBefore)
-                       this.pendingBuffer = 0 /* Buf.No */;
+                   if (this.pendingBuffer == 2 /* IfCursor */ && !cursorBefore && !view.isEditable)
+                       this.pendingBuffer = 0 /* No */;
                    this.flushBuffer(active);
                    if (cursorBefore) {
                        line.append(wrapMarks(new WidgetBufferView(1), active), openStart);
@@ -5889,7 +5969,7 @@
                    }
                    line.append(wrapMarks(view, active), openStart);
                    this.atCursorPos = cursorAfter;
-                   this.pendingBuffer = !cursorAfter ? 0 /* Buf.No */ : from < to || openStart > active.length ? 1 /* Buf.Yes */ : 2 /* Buf.IfCursor */;
+                   this.pendingBuffer = !cursorAfter ? 0 /* No */ : from < to || openStart > active.length ? 1 /* Yes */ : 2 /* IfCursor */;
                    if (this.pendingBuffer)
                        this.bufferMarks = active.slice();
                }
@@ -5934,6 +6014,7 @@
        eq(other) { return other.tag == this.tag; }
        toDOM() { return document.createElement(this.tag); }
        updateDOM(elt) { return elt.nodeName.toLowerCase() == this.tag; }
+       get isHidden() { return true; }
    }
 
    const clickAddsSelectionRange = /*@__PURE__*/Facet.define();
@@ -5942,6 +6023,7 @@
    const exceptionSink = /*@__PURE__*/Facet.define();
    const updateListener = /*@__PURE__*/Facet.define();
    const inputHandler$1 = /*@__PURE__*/Facet.define();
+   const focusChangeEffect = /*@__PURE__*/Facet.define();
    const perLineTextDirection = /*@__PURE__*/Facet.define({
        combine: values => values.some(x => x)
    });
@@ -6102,6 +6184,23 @@
    const decorations = /*@__PURE__*/Facet.define();
    const atomicRanges = /*@__PURE__*/Facet.define();
    const scrollMargins = /*@__PURE__*/Facet.define();
+   function getScrollMargins(view) {
+       let left = 0, right = 0, top = 0, bottom = 0;
+       for (let source of view.state.facet(scrollMargins)) {
+           let m = source(view);
+           if (m) {
+               if (m.left != null)
+                   left = Math.max(left, m.left);
+               if (m.right != null)
+                   right = Math.max(right, m.right);
+               if (m.top != null)
+                   top = Math.max(top, m.top);
+               if (m.bottom != null)
+                   bottom = Math.max(bottom, m.bottom);
+           }
+       }
+       return { left, right, top, bottom };
+   }
    const styleModule = /*@__PURE__*/Facet.define();
    class ChangedRange {
        constructor(fromA, toA, fromB, toB) {
@@ -6184,11 +6283,6 @@
            let changedRanges = [];
            this.changes.iterChangedRanges((fromA, toA, fromB, toB) => changedRanges.push(new ChangedRange(fromA, toA, fromB, toB)));
            this.changedRanges = changedRanges;
-           let focus = view.hasFocus;
-           if (focus != view.inputState.notifiedFocused) {
-               view.inputState.notifiedFocused = focus;
-               this.flags |= 1 /* UpdateFlag.Focus */;
-           }
        }
        /**
        @internal
@@ -6202,27 +6296,27 @@
        update.
        */
        get viewportChanged() {
-           return (this.flags & 4 /* UpdateFlag.Viewport */) > 0;
+           return (this.flags & 4 /* Viewport */) > 0;
        }
        /**
        Indicates whether the height of a block element in the editor
        changed in this update.
        */
        get heightChanged() {
-           return (this.flags & 2 /* UpdateFlag.Height */) > 0;
+           return (this.flags & 2 /* Height */) > 0;
        }
        /**
        Returns true when the document was modified or the size of the
        editor, or elements within the editor, changed.
        */
        get geometryChanged() {
-           return this.docChanged || (this.flags & (8 /* UpdateFlag.Geometry */ | 2 /* UpdateFlag.Height */)) > 0;
+           return this.docChanged || (this.flags & (8 /* Geometry */ | 2 /* Height */)) > 0;
        }
        /**
        True when this update indicates a focus change.
        */
        get focusChanged() {
-           return (this.flags & 1 /* UpdateFlag.Focus */) > 0;
+           return (this.flags & 1 /* Focus */) > 0;
        }
        /**
        Whether the document changed in this update.
@@ -6280,12 +6374,12 @@
    }
    function charType(ch) {
        return ch <= 0xf7 ? LowTypes[ch] :
-           0x590 <= ch && ch <= 0x5f4 ? 2 /* T.R */ :
+           0x590 <= ch && ch <= 0x5f4 ? 2 /* R */ :
                0x600 <= ch && ch <= 0x6f9 ? ArabicTypes[ch - 0x600] :
-                   0x6ee <= ch && ch <= 0x8ac ? 4 /* T.AL */ :
-                       0x2000 <= ch && ch <= 0x200b ? 256 /* T.NI */ :
-                           0xfb50 <= ch && ch <= 0xfdff ? 4 /* T.AL */ :
-                               ch == 0x200c ? 256 /* T.NI */ : 1 /* T.L */;
+                   0x6ee <= ch && ch <= 0x8ac ? 4 /* AL */ :
+                       0x2000 <= ch && ch <= 0x200b ? 256 /* NI */ :
+                           0xfb50 <= ch && ch <= 0xfdff ? 4 /* AL */ :
+                               ch == 0x200c ? 256 /* NI */ : 1 /* L */;
    }
    const BidiRE = /[\u0590-\u05f4\u0600-\u06ff\u0700-\u08ac\ufb50-\ufdff]/;
    /**
@@ -6350,8 +6444,8 @@
    // Reused array of character types
    const types = [];
    function computeOrder(line, direction) {
-       let len = line.length, outerType = direction == LTR ? 1 /* T.L */ : 2 /* T.R */, oppositeType = direction == LTR ? 2 /* T.R */ : 1 /* T.L */;
-       if (!line || outerType == 1 /* T.L */ && !BidiRE.test(line))
+       let len = line.length, outerType = direction == LTR ? 1 /* L */ : 2 /* R */, oppositeType = direction == LTR ? 2 /* R */ : 1 /* L */;
+       if (!line || outerType == 1 /* L */ && !BidiRE.test(line))
            return trivialOrder(len);
        // W1. Examine each non-spacing mark (NSM) in the level run, and
        // change the type of the NSM to the type of the previous
@@ -6365,12 +6459,12 @@
        // (Left after this: L, R, EN, AN, ET, CS, NI)
        for (let i = 0, prev = outerType, prevStrong = outerType; i < len; i++) {
            let type = charType(line.charCodeAt(i));
-           if (type == 512 /* T.NSM */)
+           if (type == 512 /* NSM */)
                type = prev;
-           else if (type == 8 /* T.EN */ && prevStrong == 4 /* T.AL */)
-               type = 16 /* T.AN */;
-           types[i] = type == 4 /* T.AL */ ? 2 /* T.R */ : type;
-           if (type & 7 /* T.Strong */)
+           else if (type == 8 /* EN */ && prevStrong == 4 /* AL */)
+               type = 16 /* AN */;
+           types[i] = type == 4 /* AL */ ? 2 /* R */ : type;
+           if (type & 7 /* Strong */)
                prevStrong = type;
            prev = type;
        }
@@ -6384,26 +6478,26 @@
        // (Left after this: L, R, EN+AN, NI)
        for (let i = 0, prev = outerType, prevStrong = outerType; i < len; i++) {
            let type = types[i];
-           if (type == 128 /* T.CS */) {
-               if (i < len - 1 && prev == types[i + 1] && (prev & 24 /* T.Num */))
+           if (type == 128 /* CS */) {
+               if (i < len - 1 && prev == types[i + 1] && (prev & 24 /* Num */))
                    type = types[i] = prev;
                else
-                   types[i] = 256 /* T.NI */;
+                   types[i] = 256 /* NI */;
            }
-           else if (type == 64 /* T.ET */) {
+           else if (type == 64 /* ET */) {
                let end = i + 1;
-               while (end < len && types[end] == 64 /* T.ET */)
+               while (end < len && types[end] == 64 /* ET */)
                    end++;
-               let replace = (i && prev == 8 /* T.EN */) || (end < len && types[end] == 8 /* T.EN */) ? (prevStrong == 1 /* T.L */ ? 1 /* T.L */ : 8 /* T.EN */) : 256 /* T.NI */;
+               let replace = (i && prev == 8 /* EN */) || (end < len && types[end] == 8 /* EN */) ? (prevStrong == 1 /* L */ ? 1 /* L */ : 8 /* EN */) : 256 /* NI */;
                for (let j = i; j < end; j++)
                    types[j] = replace;
                i = end - 1;
            }
-           else if (type == 8 /* T.EN */ && prevStrong == 1 /* T.L */) {
-               types[i] = 1 /* T.L */;
+           else if (type == 8 /* EN */ && prevStrong == 1 /* L */) {
+               types[i] = 1 /* L */;
            }
            prev = type;
-           if (type & 7 /* T.Strong */)
+           if (type & 7 /* Strong */)
                prevStrong = type;
        }
        // N0. Process bracket pairs in an isolating run sequence
@@ -6418,9 +6512,9 @@
                    for (let sJ = sI - 3; sJ >= 0; sJ -= 3) {
                        if (BracketStack[sJ + 1] == -br) {
                            let flags = BracketStack[sJ + 2];
-                           let type = (flags & 2 /* Bracketed.EmbedInside */) ? outerType :
-                               !(flags & 4 /* Bracketed.OppositeInside */) ? 0 :
-                                   (flags & 1 /* Bracketed.OppositeBefore */) ? oppositeType : outerType;
+                           let type = (flags & 2 /* EmbedInside */) ? outerType :
+                               !(flags & 4 /* OppositeInside */) ? 0 :
+                                   (flags & 1 /* OppositeBefore */) ? oppositeType : outerType;
                            if (type)
                                types[i] = types[BracketStack[sJ]] = type;
                            sI = sJ;
@@ -6428,7 +6522,7 @@
                        }
                    }
                }
-               else if (BracketStack.length == 189 /* Bracketed.MaxDepth */) {
+               else if (BracketStack.length == 189 /* MaxDepth */) {
                    break;
                }
                else {
@@ -6437,20 +6531,20 @@
                    BracketStack[sI++] = context;
                }
            }
-           else if ((type = types[i]) == 2 /* T.R */ || type == 1 /* T.L */) {
+           else if ((type = types[i]) == 2 /* R */ || type == 1 /* L */) {
                let embed = type == outerType;
-               context = embed ? 0 : 1 /* Bracketed.OppositeBefore */;
+               context = embed ? 0 : 1 /* OppositeBefore */;
                for (let sJ = sI - 3; sJ >= 0; sJ -= 3) {
                    let cur = BracketStack[sJ + 2];
-                   if (cur & 2 /* Bracketed.EmbedInside */)
+                   if (cur & 2 /* EmbedInside */)
                        break;
                    if (embed) {
-                       BracketStack[sJ + 2] |= 2 /* Bracketed.EmbedInside */;
+                       BracketStack[sJ + 2] |= 2 /* EmbedInside */;
                    }
                    else {
-                       if (cur & 4 /* Bracketed.OppositeInside */)
+                       if (cur & 4 /* OppositeInside */)
                            break;
-                       BracketStack[sJ + 2] |= 4 /* Bracketed.OppositeInside */;
+                       BracketStack[sJ + 2] |= 4 /* OppositeInside */;
                    }
                }
            }
@@ -6463,13 +6557,13 @@
        // N2. Any remaining neutrals take the embedding direction.
        // (Left after this: L, R, EN+AN)
        for (let i = 0; i < len; i++) {
-           if (types[i] == 256 /* T.NI */) {
+           if (types[i] == 256 /* NI */) {
                let end = i + 1;
-               while (end < len && types[end] == 256 /* T.NI */)
+               while (end < len && types[end] == 256 /* NI */)
                    end++;
-               let beforeL = (i ? types[i - 1] : outerType) == 1 /* T.L */;
-               let afterL = (end < len ? types[end] : outerType) == 1 /* T.L */;
-               let replace = beforeL == afterL ? (beforeL ? 1 /* T.L */ : 2 /* T.R */) : outerType;
+               let beforeL = (i ? types[i - 1] : outerType) == 1 /* L */;
+               let afterL = (end < len ? types[end] : outerType) == 1 /* L */;
+               let replace = beforeL == afterL ? (beforeL ? 1 /* L */ : 2 /* R */) : outerType;
                for (let j = i; j < end; j++)
                    types[j] = replace;
                i = end - 1;
@@ -6481,15 +6575,15 @@
        // explicit embedding into account, we can build up the order on
        // the fly, without following the level-based algorithm.
        let order = [];
-       if (outerType == 1 /* T.L */) {
+       if (outerType == 1 /* L */) {
            for (let i = 0; i < len;) {
-               let start = i, rtl = types[i++] != 1 /* T.L */;
-               while (i < len && rtl == (types[i] != 1 /* T.L */))
+               let start = i, rtl = types[i++] != 1 /* L */;
+               while (i < len && rtl == (types[i] != 1 /* L */))
                    i++;
                if (rtl) {
                    for (let j = i; j > start;) {
-                       let end = j, l = types[--j] != 2 /* T.R */;
-                       while (j > start && l == (types[j - 1] != 2 /* T.R */))
+                       let end = j, l = types[--j] != 2 /* R */;
+                       while (j > start && l == (types[j - 1] != 2 /* R */))
                            j--;
                        order.push(new BidiSpan(j, end, l ? 2 : 1));
                    }
@@ -6501,8 +6595,8 @@
        }
        else {
            for (let i = 0; i < len;) {
-               let start = i, rtl = types[i++] == 2 /* T.R */;
-               while (i < len && rtl == (types[i] == 2 /* T.R */))
+               let start = i, rtl = types[i++] == 2 /* R */;
+               while (i < len && rtl == (types[i] == 2 /* R */))
                    i++;
                order.push(new BidiSpan(start, i, rtl ? 1 : 2));
            }
@@ -6573,6 +6667,7 @@
            let parent = start.parentNode;
            for (let cur = start;;) {
                this.findPointBefore(parent, cur);
+               let oldLen = this.text.length;
                this.readNode(cur);
                let next = cur.nextSibling;
                if (next == end)
@@ -6580,7 +6675,7 @@
                let view = ContentView.get(cur), nextView = ContentView.get(next);
                if (view && nextView ? view.breakAfter :
                    (view ? view.breakAfter : isBlockElement(cur)) ||
-                       (isBlockElement(next) && (cur.nodeName != "BR" || cur.cmIgnore)))
+                       (isBlockElement(next) && (cur.nodeName != "BR" || cur.cmIgnore) && this.text.length > oldLen))
                    this.lineBreak();
                cur = next;
            }
@@ -6691,12 +6786,8 @@
            this.updateDeco();
            this.updateInner([new ChangedRange(0, 0, 0, view.state.doc.length)], 0);
        }
-       get editorView() { return this.view; }
        get length() { return this.view.state.doc.length; }
-       // Update the document view to a given state. scrollIntoView can be
-       // used as a hint to compute a new viewport that includes that
-       // position, if we know the editor is going to scroll that position
-       // into view.
+       // Update the document view to a given state.
        update(update) {
            let changedRanges = update.changedRanges;
            if (this.minWidth > 0 && changedRanges.length) {
@@ -6723,7 +6814,7 @@
            let prevDeco = this.decorations, deco = this.updateDeco();
            let decoDiff = findChangedDeco(prevDeco, deco, update.changes);
            changedRanges = ChangedRange.extendWithRanges(changedRanges, decoDiff);
-           if (this.dirty == 0 /* Dirty.Not */ && changedRanges.length == 0) {
+           if (this.dirty == 0 /* Not */ && changedRanges.length == 0) {
                return false;
            }
            else {
@@ -6751,8 +6842,8 @@
                // selection from the one it displays (issue #218). This tries
                // to detect that situation.
                let track = browser.chrome || browser.ios ? { node: observer.selectionRange.focusNode, written: false } : undefined;
-               this.sync(track);
-               this.dirty = 0 /* Dirty.Not */;
+               this.sync(this.view, track);
+               this.dirty = 0 /* Not */;
                if (track && (track.written || observer.selectionRange.focusNode != track.node))
                    this.forceSelection = true;
                this.dom.style.height = "";
@@ -6781,7 +6872,10 @@
        updateSelection(mustRead = false, fromPointer = false) {
            if (mustRead || !this.view.observer.selectionRange.focusNode)
                this.view.observer.readSelectionRange();
-           if (!(fromPointer || this.mayControlSelection()))
+           let activeElt = this.view.root.activeElement, focused = activeElt == this.dom;
+           let selectionNotFocus = !focused &&
+               hasSelection(this.dom, this.view.observer.selectionRange) && !(activeElt && this.dom.contains(activeElt));
+           if (!(focused || fromPointer || selectionNotFocus))
                return;
            let force = this.forceSelection;
            this.forceSelection = false;
@@ -6791,7 +6885,7 @@
            let head = main.empty ? anchor : this.domAtPos(main.head);
            // Always reset on Firefox when next to an uneditable node to
            // avoid invisible cursor bugs (#111)
-           if (browser.gecko && main.empty && betweenUneditable(anchor)) {
+           if (browser.gecko && main.empty && !this.compositionDeco.size && betweenUneditable(anchor)) {
                let dummy = document.createTextNode("");
                this.view.observer.ignore(() => anchor.node.insertBefore(dummy, anchor.node.childNodes[anchor.offset] || null));
                anchor = head = new DOMPos(dummy, 0);
@@ -6818,10 +6912,10 @@
                        // Work around https://bugzilla.mozilla.org/show_bug.cgi?id=1612076
                        if (browser.gecko) {
                            let nextTo = nextToUneditable(anchor.node, anchor.offset);
-                           if (nextTo && nextTo != (1 /* NextTo.Before */ | 2 /* NextTo.After */)) {
-                               let text = nearbyTextNode(anchor.node, anchor.offset, nextTo == 1 /* NextTo.Before */ ? 1 : -1);
+                           if (nextTo && nextTo != (1 /* Before */ | 2 /* After */)) {
+                               let text = nearbyTextNode(anchor.node, anchor.offset, nextTo == 1 /* Before */ ? 1 : -1);
                                if (text)
-                                   anchor = new DOMPos(text, nextTo == 1 /* NextTo.Before */ ? 0 : text.nodeValue.length);
+                                   anchor = new DOMPos(text, nextTo == 1 /* Before */ ? 0 : text.nodeValue.length);
                            }
                        }
                        rawSel.collapse(anchor.node, anchor.offset);
@@ -6850,6 +6944,11 @@
                        range.setStart(anchor.node, anchor.offset);
                        rawSel.removeAllRanges();
                        rawSel.addRange(range);
+                   }
+                   if (selectionNotFocus && this.view.root.activeElement == this.dom) {
+                       this.dom.blur();
+                       if (activeElt)
+                           activeElt.focus();
                    }
                });
                this.view.observer.setSelectionRange(anchor, head);
@@ -6883,11 +6982,6 @@
            let newRange = view.observer.selectionRange;
            if (view.docView.posFromDOM(newRange.anchorNode, newRange.anchorOffset) != cursor.from)
                sel.collapse(anchorNode, anchorOffset);
-       }
-       mayControlSelection() {
-           let active = this.view.root.activeElement;
-           return active == this.dom ||
-               hasSelection(this.dom, this.view.observer.selectionRange) && !(active && this.dom.contains(active));
        }
        nearest(dom) {
            for (let cur = dom; cur;) {
@@ -6970,7 +7064,7 @@
                }
            }
            // If no workable line exists, force a layout of a measurable element
-           let dummy = document.createElement("div"), lineHeight, charWidth;
+           let dummy = document.createElement("div"), lineHeight, charWidth, textHeight;
            dummy.className = "cm-line";
            dummy.style.width = "99999px";
            dummy.textContent = "abc def ghi jkl mno pqr stu";
@@ -6979,9 +7073,10 @@
                let rect = clientRectsFor(dummy.firstChild)[0];
                lineHeight = dummy.getBoundingClientRect().height;
                charWidth = rect ? rect.width / 27 : 7;
+               textHeight = rect ? rect.height : lineHeight;
                dummy.remove();
            });
-           return { lineHeight, charWidth };
+           return { lineHeight, charWidth, textHeight };
        }
        childCursor(pos = this.length) {
            // Move back to start of last element when possible, so that
@@ -7034,22 +7129,10 @@
            if (!range.empty && (other = this.coordsAt(range.anchor, range.anchor > range.head ? -1 : 1)))
                rect = { left: Math.min(rect.left, other.left), top: Math.min(rect.top, other.top),
                    right: Math.max(rect.right, other.right), bottom: Math.max(rect.bottom, other.bottom) };
-           let mLeft = 0, mRight = 0, mTop = 0, mBottom = 0;
-           for (let margins of this.view.state.facet(scrollMargins).map(f => f(this.view)))
-               if (margins) {
-                   let { left, right, top, bottom } = margins;
-                   if (left != null)
-                       mLeft = Math.max(mLeft, left);
-                   if (right != null)
-                       mRight = Math.max(mRight, right);
-                   if (top != null)
-                       mTop = Math.max(mTop, top);
-                   if (bottom != null)
-                       mBottom = Math.max(mBottom, bottom);
-               }
+           let margins = getScrollMargins(this.view);
            let targetRect = {
-               left: rect.left - mLeft, top: rect.top - mTop,
-               right: rect.right + mRight, bottom: rect.bottom + mBottom
+               left: rect.left - margins.left, top: rect.top - margins.top,
+               right: rect.right + margins.right, bottom: rect.bottom + margins.bottom
            };
            scrollRectIntoView(this.view.scrollDOM, targetRect, range.head < range.anchor ? -1 : 1, target.x, target.y, target.xMargin, target.yMargin, this.view.textDirection == Direction.LTR);
        }
@@ -7113,17 +7196,23 @@
            return Decoration.none;
        let { from, to, node, text: textNode } = surrounding;
        let newFrom = changes.mapPos(from, 1), newTo = Math.max(newFrom, changes.mapPos(to, -1));
-       let { state } = view, text = node.nodeType == 3 ? node.nodeValue :
-           new DOMReader([], state).readRange(node.firstChild, null).text;
+       let { state } = view, reader = new DOMReader([], state);
+       if (node.nodeType == 3)
+           reader.readTextNode(node);
+       else
+           reader.readRange(node.firstChild, null);
+       let { text } = reader;
+       if (text.indexOf(LineBreakPlaceholder) > -1)
+           return Decoration.none; // Don't try to preserve multi-line compositions
        if (newTo - newFrom < text.length) {
-           if (state.doc.sliceString(newFrom, Math.min(state.doc.length, newFrom + text.length), LineBreakPlaceholder) == text)
+           if (state.doc.sliceString(newFrom, Math.min(state.doc.length, newFrom + text.length)) == text)
                newTo = newFrom + text.length;
-           else if (state.doc.sliceString(Math.max(0, newTo - text.length), newTo, LineBreakPlaceholder) == text)
+           else if (state.doc.sliceString(Math.max(0, newTo - text.length), newTo) == text)
                newFrom = newTo - text.length;
            else
                return Decoration.none;
        }
-       else if (state.doc.sliceString(newFrom, newTo, LineBreakPlaceholder) != text) {
+       else if (state.doc.sliceString(newFrom, newTo) != text) {
            return Decoration.none;
        }
        let topView = ContentView.get(node);
@@ -7146,28 +7235,38 @@
        ignoreEvent() { return false; }
        get customView() { return CompositionView; }
    }
-   function nearbyTextNode(node, offset, side) {
-       for (;;) {
-           if (node.nodeType == 3)
-               return node;
-           if (node.nodeType == 1 && offset > 0 && side <= 0) {
-               node = node.childNodes[offset - 1];
-               offset = maxOffset(node);
+   function nearbyTextNode(startNode, startOffset, side) {
+       if (side <= 0)
+           for (let node = startNode, offset = startOffset;;) {
+               if (node.nodeType == 3)
+                   return node;
+               if (node.nodeType == 1 && offset > 0) {
+                   node = node.childNodes[offset - 1];
+                   offset = maxOffset(node);
+               }
+               else {
+                   break;
+               }
            }
-           else if (node.nodeType == 1 && offset < node.childNodes.length && side >= 0) {
-               node = node.childNodes[offset];
-               offset = 0;
+       if (side >= 0)
+           for (let node = startNode, offset = startOffset;;) {
+               if (node.nodeType == 3)
+                   return node;
+               if (node.nodeType == 1 && offset < node.childNodes.length && side >= 0) {
+                   node = node.childNodes[offset];
+                   offset = 0;
+               }
+               else {
+                   break;
+               }
            }
-           else {
-               return null;
-           }
-       }
+       return null;
    }
    function nextToUneditable(node, offset) {
        if (node.nodeType != 1)
            return 0;
-       return (offset && node.childNodes[offset - 1].contentEditable == "false" ? 1 /* NextTo.Before */ : 0) |
-           (offset < node.childNodes.length && node.childNodes[offset].contentEditable == "false" ? 2 /* NextTo.After */ : 0);
+       return (offset && node.childNodes[offset - 1].contentEditable == "false" ? 1 /* Before */ : 0) |
+           (offset < node.childNodes.length && node.childNodes[offset].contentEditable == "false" ? 2 /* After */ : 0);
    }
    class DecorationComparator$1 {
        constructor() {
@@ -7254,7 +7353,8 @@
                    closestRect = rect;
                    closestX = dx;
                    closestY = dy;
-                   closestOverlap = !dx || (dx > 0 ? i < rects.length - 1 : i > 0);
+                   let side = dy ? (y < rect.top ? -1 : 1) : dx ? (x < rect.left ? -1 : 1) : 0;
+                   closestOverlap = !side || (side > 0 ? i < rects.length - 1 : i > 0);
                }
                if (dx == 0) {
                    if (y > rect.bottom && (!aboveRect || aboveRect.bottom < rect.bottom)) {
@@ -7323,17 +7423,17 @@
        }
        return { node, offset: closestOffset > -1 ? closestOffset : generalSide > 0 ? node.nodeValue.length : 0 };
    }
-   function posAtCoords(view, { x, y }, precise, bias = -1) {
-       var _a;
+   function posAtCoords(view, coords, precise, bias = -1) {
+       var _a, _b;
        let content = view.contentDOM.getBoundingClientRect(), docTop = content.top + view.viewState.paddingTop;
        let block, { docHeight } = view.viewState;
-       let yOffset = y - docTop;
+       let { x, y } = coords, yOffset = y - docTop;
        if (yOffset < 0)
            return 0;
        if (yOffset > docHeight)
            return view.state.doc.length;
        // Scan for a text block near the queried y position
-       for (let halfLine = view.defaultLineHeight / 2, bounced = false;;) {
+       for (let halfLine = view.viewState.heightOracle.textHeight / 2, bounced = false;;) {
            block = view.elementAtHeight(yOffset);
            if (block.type == BlockType.Text)
                break;
@@ -7398,12 +7498,23 @@
                return yOffset > block.top + block.height / 2 ? block.to : block.from;
            ({ node, offset } = domPosAtCoords(line.dom, x, y));
        }
-       return view.docView.posFromDOM(node, offset);
+       let nearest = view.docView.nearest(node);
+       if (!nearest)
+           return null;
+       if (nearest.isWidget && ((_b = nearest.dom) === null || _b === void 0 ? void 0 : _b.nodeType) == 1) {
+           let rect = nearest.dom.getBoundingClientRect();
+           return coords.y < rect.top || coords.y <= rect.bottom && coords.x <= (rect.left + rect.right) / 2
+               ? nearest.posAtStart : nearest.posAtEnd;
+       }
+       else {
+           return nearest.localPosFromDOM(node, offset) + nearest.posAtStart;
+       }
    }
    function posAtCoordsImprecise(view, contentRect, block, x, y) {
        let into = Math.round((x - contentRect.left) * view.defaultCharacterWidth);
        if (view.lineWrapping && block.height > view.defaultLineHeight * 1.5) {
-           let line = Math.floor((y - block.top) / view.defaultLineHeight);
+           let textHeight = view.viewState.heightOracle.textHeight;
+           let line = Math.floor((y - block.top - (view.defaultLineHeight - textHeight) * 0.5) / textHeight);
            into += line * view.viewState.heightOracle.lineLength;
        }
        let content = view.state.sliceDoc(block.from, block.to);
@@ -7438,9 +7549,18 @@
            : textRange(node, 0, Math.max(node.nodeValue.length, 1)).getBoundingClientRect();
        return x - rect.left > 5;
    }
+   function blockAt(view, pos) {
+       let line = view.lineBlockAt(pos);
+       if (Array.isArray(line.type))
+           for (let l of line.type) {
+               if (l.to > pos || l.to == pos && (l.to == line.to || l.type == BlockType.Text))
+                   return l;
+           }
+       return line;
+   }
    function moveToLineBoundary(view, start, forward, includeWrap) {
-       let line = view.state.doc.lineAt(start.head);
-       let coords = !includeWrap || !view.lineWrapping ? null
+       let line = blockAt(view, start.head);
+       let coords = !includeWrap || line.type != BlockType.Text || !(view.lineWrapping || line.widgetLineBreaks) ? null
            : view.coordsAtPos(start.assoc < 0 && start.head > line.from ? start.head - 1 : start.head);
        if (coords) {
            let editorRect = view.dom.getBoundingClientRect();
@@ -7450,9 +7570,7 @@
            if (pos != null)
                return EditorSelection.cursor(pos, forward ? -1 : 1);
        }
-       let lineView = LineView.find(view.docView, start.head);
-       let end = lineView ? (forward ? lineView.posAtEnd : lineView.posAtStart) : (forward ? line.to : line.from);
-       return EditorSelection.cursor(end, forward ? -1 : 1);
+       return EditorSelection.cursor(forward ? line.to : line.from, forward ? -1 : 1);
    }
    function moveByChar(view, start, forward, by) {
        let line = view.state.doc.lineAt(start.head), spans = view.bidiSpans(line);
@@ -7507,7 +7625,7 @@
            startY = (dir < 0 ? line.top : line.bottom) + docTop;
        }
        let resolvedGoal = rect.left + goal;
-       let dist = distance !== null && distance !== void 0 ? distance : (view.defaultLineHeight >> 1);
+       let dist = distance !== null && distance !== void 0 ? distance : (view.viewState.heightOracle.textHeight >> 1);
        for (let extra = 0;; extra += 10) {
            let curY = startY + (dist + extra) * dir;
            let pos = posAtCoords(view, { x: resolvedGoal, y: curY }, false, dir);
@@ -7515,21 +7633,25 @@
                return EditorSelection.cursor(pos, start.assoc, undefined, goal);
        }
    }
-   function skipAtoms(view, oldPos, pos) {
-       let atoms = view.state.facet(atomicRanges).map(f => f(view));
+   function skipAtomicRanges(atoms, pos, bias) {
        for (;;) {
-           let moved = false;
+           let moved = 0;
            for (let set of atoms) {
-               set.between(pos.from - 1, pos.from + 1, (from, to, value) => {
-                   if (pos.from > from && pos.from < to) {
-                       pos = oldPos.head > pos.from ? EditorSelection.cursor(from, 1) : EditorSelection.cursor(to, -1);
-                       moved = true;
+               set.between(pos - 1, pos + 1, (from, to, value) => {
+                   if (pos > from && pos < to) {
+                       let side = moved || bias || (pos - from < to - pos ? -1 : 1);
+                       pos = side < 0 ? from : to;
+                       moved = side;
                    }
                });
            }
            if (!moved)
                return pos;
        }
+   }
+   function skipAtoms(view, oldPos, pos) {
+       let newPos = skipAtomicRanges(view.state.facet(atomicRanges).map(f => f(view)), pos.from, oldPos.head > pos.from ? -1 : 1);
+       return newPos == pos.from ? pos : EditorSelection.cursor(newPos, newPos < pos.from ? 1 : -1);
    }
 
    // This will also be where dragging info and such goes
@@ -7563,7 +7685,15 @@
            // first, false means first has already been marked for this
            // composition)
            this.compositionFirstChange = null;
+           // End time of the previous composition
            this.compositionEndedAt = 0;
+           // Used in a kludge to detect when an Enter keypress should be
+           // considered part of the composition on Safari, which fires events
+           // in the wrong order
+           this.compositionPendingKey = false;
+           // Used to categorize changes as part of a composition, even when
+           // the mutation events fire shortly after the compositionend event
+           this.compositionPendingChange = false;
            this.mouseSelection = null;
            let handleEvent = (handler, event) => {
                if (this.ignoreDuringComposition(event))
@@ -7586,8 +7716,20 @@
                this.registeredEvents.push(type);
            }
            view.scrollDOM.addEventListener("mousedown", (event) => {
-               if (event.target == view.scrollDOM)
+               if (event.target == view.scrollDOM && event.clientY > view.contentDOM.getBoundingClientRect().bottom) {
                    handleEvent(handlers.mousedown, event);
+                   if (!event.defaultPrevented && event.button == 2) {
+                       // Make sure the content covers the entire scroller height, in order
+                       // to catch a native context menu click below it
+                       let start = view.contentDOM.style.minHeight;
+                       view.contentDOM.style.minHeight = "100%";
+                       setTimeout(() => view.contentDOM.style.minHeight = start, 200);
+                   }
+               }
+           });
+           view.scrollDOM.addEventListener("drop", (event) => {
+               if (event.target == view.scrollDOM && event.clientY > view.contentDOM.getBoundingClientRect().bottom)
+                   handleEvent(handlers.drop, event);
            });
            if (browser.chrome && browser.chrome_version == 102) { // FIXME remove at some point
                // On Chrome 102, viewport updates somehow stop wheel-based
@@ -7669,6 +7811,8 @@
            this.lastKeyTime = Date.now();
            if (event.keyCode == 9 && Date.now() < this.lastEscPress + 2000)
                return true;
+           if (event.keyCode != 27 && modifierCodes.indexOf(event.keyCode) < 0)
+               view.inputState.lastEscPress = 0;
            // Chrome for Android usually doesn't fire proper key events, but
            // occasionally does, usually surrounded by a bunch of complicated
            // composition changes. When an enter or backspace key event is
@@ -7712,8 +7856,8 @@
            // compositionend and keydown events are sometimes emitted in the
            // wrong order. The key event should still be ignored, even when
            // it happens after the compositionend event.
-           if (browser.safari && !browser.ios && Date.now() - this.compositionEndedAt < 100) {
-               this.compositionEndedAt = 0;
+           if (browser.safari && !browser.ios && this.compositionPendingKey && Date.now() - this.compositionEndedAt < 100) {
+               this.compositionPendingKey = false;
                return true;
            }
            return false;
@@ -7745,8 +7889,9 @@
    const EmacsyPendingKeys = "dthko";
    // Key codes for modifier keys
    const modifierCodes = [16, 17, 18, 20, 91, 92, 224, 225];
+   const dragScrollMargin = 6;
    function dragScrollSpeed(dist) {
-       return dist * 0.7 + 8;
+       return Math.max(0, dist) * 0.7 + 8;
    }
    class MouseSelection {
        constructor(view, startEvent, style, mustSelect) {
@@ -7757,18 +7902,20 @@
            this.scrolling = -1;
            this.lastEvent = startEvent;
            this.scrollParent = scrollableParent(view.contentDOM);
+           this.atoms = view.state.facet(atomicRanges).map(f => f(view));
            let doc = view.contentDOM.ownerDocument;
            doc.addEventListener("mousemove", this.move = this.move.bind(this));
            doc.addEventListener("mouseup", this.up = this.up.bind(this));
            this.extend = startEvent.shiftKey;
            this.multiple = view.state.facet(EditorState.allowMultipleSelections) && addsSelectionRange(view, startEvent);
-           this.dragMove = dragMovesSelection(view, startEvent);
            this.dragging = isInPrimarySelection(view, startEvent) && getClickType(startEvent) == 1 ? null : false;
+       }
+       start(event) {
            // When clicking outside of the selection, immediately apply the
            // effect of starting the selection
            if (this.dragging === false) {
-               startEvent.preventDefault();
-               this.select(startEvent);
+               event.preventDefault();
+               this.select(event);
            }
        }
        move(event) {
@@ -7781,13 +7928,14 @@
            let sx = 0, sy = 0;
            let rect = ((_a = this.scrollParent) === null || _a === void 0 ? void 0 : _a.getBoundingClientRect())
                || { left: 0, top: 0, right: this.view.win.innerWidth, bottom: this.view.win.innerHeight };
-           if (event.clientX <= rect.left)
+           let margins = getScrollMargins(this.view);
+           if (event.clientX - margins.left <= rect.left + dragScrollMargin)
                sx = -dragScrollSpeed(rect.left - event.clientX);
-           else if (event.clientX >= rect.right)
+           else if (event.clientX + margins.right >= rect.right - dragScrollMargin)
                sx = dragScrollSpeed(event.clientX - rect.right);
-           if (event.clientY <= rect.top)
+           if (event.clientY - margins.top <= rect.top + dragScrollMargin)
                sy = -dragScrollSpeed(rect.top - event.clientY);
-           else if (event.clientY >= rect.bottom)
+           else if (event.clientY + margins.bottom >= rect.bottom - dragScrollMargin)
                sy = dragScrollSpeed(event.clientY - rect.bottom);
            this.setScrollSpeed(sx, sy);
        }
@@ -7827,10 +7975,33 @@
            if (this.dragging === false)
                this.select(this.lastEvent);
        }
+       skipAtoms(sel) {
+           let ranges = null;
+           for (let i = 0; i < sel.ranges.length; i++) {
+               let range = sel.ranges[i], updated = null;
+               if (range.empty) {
+                   let pos = skipAtomicRanges(this.atoms, range.from, 0);
+                   if (pos != range.from)
+                       updated = EditorSelection.cursor(pos, -1);
+               }
+               else {
+                   let from = skipAtomicRanges(this.atoms, range.from, -1);
+                   let to = skipAtomicRanges(this.atoms, range.to, 1);
+                   if (from != range.from || to != range.to)
+                       updated = EditorSelection.range(range.from == range.anchor ? from : to, range.from == range.head ? from : to);
+               }
+               if (updated) {
+                   if (!ranges)
+                       ranges = sel.ranges.slice();
+                   ranges[i] = updated;
+               }
+           }
+           return ranges ? EditorSelection.create(ranges, sel.mainIndex) : sel;
+       }
        select(event) {
-           let selection = this.style.get(event, this.extend, this.multiple);
-           if (this.mustSelect || !selection.eq(this.view.state.selection) ||
-               selection.main.assoc != this.view.state.selection.main.assoc)
+           let { view } = this, selection = this.skipAtoms(this.style.get(event, this.extend, this.multiple));
+           if (this.mustSelect || !selection.eq(view.state.selection) ||
+               selection.main.assoc != view.state.selection.main.assoc)
                this.view.dispatch({
                    selection,
                    userEvent: "select.pointer"
@@ -7935,8 +8106,6 @@
        view.inputState.setSelectionOrigin("select");
        if (event.keyCode == 27)
            view.inputState.lastEscPress = Date.now();
-       else if (modifierCodes.indexOf(event.keyCode) < 0)
-           view.inputState.lastEscPress = 0;
    };
    handlers.touchstart = (view, e) => {
        view.inputState.lastTouchTime = Date.now();
@@ -7960,9 +8129,11 @@
            style = basicMouseSelection(view, event);
        if (style) {
            let mustFocus = view.root.activeElement != view.contentDOM;
+           view.inputState.startMouseSelection(new MouseSelection(view, event, style, mustFocus));
            if (mustFocus)
                view.observer.ignore(() => focusPreventScroll(view.contentDOM));
-           view.inputState.startMouseSelection(new MouseSelection(view, event, style, mustFocus));
+           if (view.inputState.mouseSelection)
+               view.inputState.mouseSelection.start(event);
        }
    };
    function rangeForClick(view, pos, bias, type) {
@@ -8032,7 +8203,7 @@
                }
            },
            get(event, extend, multiple) {
-               let cur = queryPos(view, event);
+               let cur = queryPos(view, event), removed;
                let range = rangeForClick(view, cur.pos, cur.bias, type);
                if (start.pos != cur.pos && !extend) {
                    let startRange = rangeForClick(view, start.pos, start.bias, type);
@@ -8041,8 +8212,8 @@
                }
                if (extend)
                    return startSel.replaceRange(startSel.main.extend(range.from, range.to));
-               else if (multiple && startSel.ranges.length > 1 && startSel.ranges.some(r => r.eq(range)))
-                   return removeRange(startSel, range);
+               else if (multiple && type == 1 && startSel.ranges.length > 1 && (removed = removeRangeAround(startSel, cur.pos)))
+                   return removed;
                else if (multiple)
                    return startSel.addRange(range);
                else
@@ -8050,11 +8221,13 @@
            }
        };
    }
-   function removeRange(sel, range) {
-       for (let i = 0;; i++) {
-           if (sel.ranges[i].eq(range))
+   function removeRangeAround(sel, pos) {
+       for (let i = 0; i < sel.ranges.length; i++) {
+           let { from, to } = sel.ranges[i];
+           if (from <= pos && to >= pos)
                return EditorSelection.create(sel.ranges.slice(0, i).concat(sel.ranges.slice(i + 1)), sel.mainIndex == i ? 0 : sel.mainIndex - (sel.mainIndex > i ? 1 : 0));
        }
+       return null;
    }
    handlers.dragstart = (view, event) => {
        let { selection: { main } } = view.state;
@@ -8072,7 +8245,7 @@
        let dropPos = view.posAtCoords({ x: event.clientX, y: event.clientY }, false);
        event.preventDefault();
        let { mouseSelection } = view.inputState;
-       let del = direct && mouseSelection && mouseSelection.dragging && mouseSelection.dragMove ?
+       let del = direct && mouseSelection && mouseSelection.dragging && dragMovesSelection(view, event) ?
            { from: mouseSelection.dragging.from, to: mouseSelection.dragging.to } : null;
        let ins = { from: dropPos, insert: text };
        let changes = view.state.changes(del ? [del, ins] : ins);
@@ -8117,7 +8290,7 @@
        view.observer.flush();
        let data = brokenClipboardAPI ? null : event.clipboardData;
        if (data) {
-           doPaste(view, data.getData("text/plain"));
+           doPaste(view, data.getData("text/plain") || data.getData("text/uri-text"));
            event.preventDefault();
        }
        else {
@@ -8185,10 +8358,26 @@
                userEvent: "delete.cut"
            });
    };
+   const isFocusChange = /*@__PURE__*/Annotation.define();
+   function focusChangeTransaction(state, focus) {
+       let effects = [];
+       for (let getEffect of state.facet(focusChangeEffect)) {
+           let effect = getEffect(state, focus);
+           if (effect)
+               effects.push(effect);
+       }
+       return effects ? state.update({ effects, annotations: isFocusChange.of(true) }) : null;
+   }
    function updateForFocusChange(view) {
        setTimeout(() => {
-           if (view.hasFocus != view.inputState.notifiedFocused)
-               view.update([]);
+           let focus = view.hasFocus;
+           if (focus != view.inputState.notifiedFocused) {
+               let tr = focusChangeTransaction(view.state, focus);
+               if (tr)
+                   view.dispatch(tr);
+               else
+                   view.update([]);
+           }
        }, 10);
    }
    handlers.focus = view => {
@@ -8215,14 +8404,26 @@
    handlers.compositionend = view => {
        view.inputState.composing = -1;
        view.inputState.compositionEndedAt = Date.now();
+       view.inputState.compositionPendingKey = true;
+       view.inputState.compositionPendingChange = view.observer.pendingRecords().length > 0;
        view.inputState.compositionFirstChange = null;
-       if (browser.chrome && browser.android)
+       if (browser.chrome && browser.android) {
+           // Delay flushing for a bit on Android because it'll often fire a
+           // bunch of contradictory changes in a row at end of compositon
            view.observer.flushSoon();
-       setTimeout(() => {
-           // Force the composition state to be cleared if it hasn't already been
-           if (view.inputState.composing < 0 && view.docView.compositionDeco.size)
-               view.update([]);
-       }, 50);
+       }
+       else if (view.inputState.compositionPendingChange) {
+           // If we found pending records, schedule a flush.
+           Promise.resolve().then(() => view.observer.flush());
+       }
+       else {
+           // Otherwise, make sure that, if no changes come in soon, the
+           // composition view is cleared.
+           setTimeout(() => {
+               if (view.inputState.composing < 0 && view.docView.compositionDeco.size)
+                   view.update([]);
+           }, 50);
+       }
    };
    handlers.contextmenu = view => {
        view.inputState.lastContextMenu = Date.now();
@@ -8261,8 +8462,9 @@
            this.lineWrapping = lineWrapping;
            this.doc = Text.empty;
            this.heightSamples = {};
-           this.lineHeight = 14;
+           this.lineHeight = 14; // The height of an entire line (line-height)
            this.charWidth = 7;
+           this.textHeight = 14; // The height of the actual font (font-size)
            this.lineLength = 30;
            // Used to track, during updateHeight, if any actual heights changed
            this.heightChanged = false;
@@ -8270,7 +8472,7 @@
        heightForGap(from, to) {
            let lines = this.doc.lineAt(to).number - this.doc.lineAt(from).number + 1;
            if (this.lineWrapping)
-               lines += Math.ceil(((to - from) - (lines * this.lineLength * 0.5)) / this.lineLength);
+               lines += Math.max(0, Math.ceil(((to - from) - (lines * this.lineLength * 0.5)) / this.lineLength));
            return this.lineHeight * lines;
        }
        heightForLine(length) {
@@ -8297,12 +8499,13 @@
            }
            return newHeight;
        }
-       refresh(whiteSpace, lineHeight, charWidth, lineLength, knownHeights) {
+       refresh(whiteSpace, lineHeight, charWidth, textHeight, lineLength, knownHeights) {
            let lineWrapping = wrappingWhiteSpace.indexOf(whiteSpace) > -1;
            let changed = Math.round(lineHeight) != Math.round(this.lineHeight) || this.lineWrapping != lineWrapping;
            this.lineWrapping = lineWrapping;
            this.lineHeight = lineHeight;
            this.charWidth = charWidth;
+           this.textHeight = textHeight;
            this.lineLength = lineLength;
            if (changed) {
                this.heightSamples = {};
@@ -8355,15 +8558,25 @@
        */
        height, 
        /**
-       The type of element this is. When querying lines, this may be
-       an array of all the blocks that make up the line.
+       @internal Weird packed field that holds an array of children
+       for composite blocks, a decoration for block widgets, and a
+       number indicating the amount of widget-create line breaks for
+       text blocks.
        */
-       type) {
+       _content) {
            this.from = from;
            this.length = length;
            this.top = top;
            this.height = height;
-           this.type = type;
+           this._content = _content;
+       }
+       /**
+       The type of element this is. When querying lines, this may be
+       an array of all the blocks that make up the line.
+       */
+       get type() {
+           return typeof this._content == "number" ? BlockType.Text :
+               Array.isArray(this._content) ? this._content : this._content.type;
        }
        /**
        The end of the element as a document position.
@@ -8374,12 +8587,26 @@
        */
        get bottom() { return this.top + this.height; }
        /**
+       If this is a widget block, this will return the widget
+       associated with it.
+       */
+       get widget() {
+           return this._content instanceof PointDecoration ? this._content.widget : null;
+       }
+       /**
+       If this is a textblock, this holds the number of line breaks
+       that appear in widgets inside the block.
+       */
+       get widgetLineBreaks() {
+           return typeof this._content == "number" ? this._content : 0;
+       }
+       /**
        @internal
        */
        join(other) {
-           let detail = (Array.isArray(this.type) ? this.type : [this])
-               .concat(Array.isArray(other.type) ? other.type : [other]);
-           return new BlockInfo(this.from, this.length + other.length, this.top, this.height + other.height, detail);
+           let content = (Array.isArray(this._content) ? this._content : [this])
+               .concat(Array.isArray(other._content) ? other._content : [other]);
+           return new BlockInfo(this.from, this.length + other.length, this.top, this.height + other.height, content);
        }
    }
    var QueryType$1 = /*@__PURE__*/(function (QueryType) {
@@ -8391,13 +8618,13 @@
    class HeightMap {
        constructor(length, // The number of characters covered
        height, // Height of this part of the document
-       flags = 2 /* Flag.Outdated */) {
+       flags = 2 /* Outdated */) {
            this.length = length;
            this.height = height;
            this.flags = flags;
        }
-       get outdated() { return (this.flags & 2 /* Flag.Outdated */) > 0; }
-       set outdated(value) { this.flags = (value ? 2 /* Flag.Outdated */ : 0) | (this.flags & ~2 /* Flag.Outdated */); }
+       get outdated() { return (this.flags & 2 /* Outdated */) > 0; }
+       set outdated(value) { this.flags = (value ? 2 /* Outdated */ : 0) | (this.flags & ~2 /* Outdated */); }
        setHeight(oracle, height) {
            if (this.height != height) {
                if (Math.abs(this.height - height) > Epsilon)
@@ -8415,11 +8642,11 @@
        decomposeLeft(_to, result) { result.push(this); }
        decomposeRight(_from, result) { result.push(this); }
        applyChanges(decorations, oldDoc, oracle, changes) {
-           let me = this;
+           let me = this, doc = oracle.doc;
            for (let i = changes.length - 1; i >= 0; i--) {
                let { fromA, toA, fromB, toB } = changes[i];
-               let start = me.lineAt(fromA, QueryType$1.ByPosNoHeight, oldDoc, 0, 0);
-               let end = start.to >= toA ? start : me.lineAt(toA, QueryType$1.ByPosNoHeight, oldDoc, 0, 0);
+               let start = me.lineAt(fromA, QueryType$1.ByPosNoHeight, oracle.setDoc(oldDoc), 0, 0);
+               let end = start.to >= toA ? start : me.lineAt(toA, QueryType$1.ByPosNoHeight, oracle, 0, 0);
                toB += end.to - toA;
                toA = end.to;
                while (i > 0 && start.from <= changes[i - 1].toA) {
@@ -8427,11 +8654,11 @@
                    fromB = changes[i - 1].fromB;
                    i--;
                    if (fromA < start.from)
-                       start = me.lineAt(fromA, QueryType$1.ByPosNoHeight, oldDoc, 0, 0);
+                       start = me.lineAt(fromA, QueryType$1.ByPosNoHeight, oracle, 0, 0);
                }
                fromB += start.from - fromA;
                fromA = start.from;
-               let nodes = NodeBuilder.build(oracle, decorations, fromB, toB);
+               let nodes = NodeBuilder.build(oracle.setDoc(doc), decorations, fromB, toB);
                me = me.replace(fromA, toA, nodes);
            }
            return me.updateHeight(oracle, 0);
@@ -8494,19 +8721,19 @@
    }
    HeightMap.prototype.size = 1;
    class HeightMapBlock extends HeightMap {
-       constructor(length, height, type) {
+       constructor(length, height, deco) {
            super(length, height);
-           this.type = type;
+           this.deco = deco;
        }
-       blockAt(_height, _doc, top, offset) {
-           return new BlockInfo(offset, this.length, top, this.height, this.type);
+       blockAt(_height, _oracle, top, offset) {
+           return new BlockInfo(offset, this.length, top, this.height, this.deco || 0);
        }
-       lineAt(_value, _type, doc, top, offset) {
-           return this.blockAt(0, doc, top, offset);
+       lineAt(_value, _type, oracle, top, offset) {
+           return this.blockAt(0, oracle, top, offset);
        }
-       forEachLine(from, to, doc, top, offset, f) {
+       forEachLine(from, to, oracle, top, offset, f) {
            if (from <= offset + this.length && to >= offset)
-               f(this.blockAt(0, doc, top, offset));
+               f(this.blockAt(0, oracle, top, offset));
        }
        updateHeight(oracle, offset = 0, _force = false, measured) {
            if (measured && measured.from <= offset && measured.more)
@@ -8518,13 +8745,17 @@
    }
    class HeightMapText extends HeightMapBlock {
        constructor(length, height) {
-           super(length, height, BlockType.Text);
+           super(length, height, null);
            this.collapsed = 0; // Amount of collapsed content in the line
            this.widgetHeight = 0; // Maximum inline widget height
+           this.breaks = 0; // Number of widget-introduced line breaks on the line
+       }
+       blockAt(_height, _oracle, top, offset) {
+           return new BlockInfo(offset, this.length, top, this.height, this.breaks);
        }
        replace(_from, _to, nodes) {
            let node = nodes[0];
-           if (nodes.length == 1 && (node instanceof HeightMapText || node instanceof HeightMapGap && (node.flags & 4 /* Flag.SingleLine */)) &&
+           if (nodes.length == 1 && (node instanceof HeightMapText || node instanceof HeightMapGap && (node.flags & 4 /* SingleLine */)) &&
                Math.abs(this.length - node.length) < 10) {
                if (node instanceof HeightMapGap)
                    node = new HeightMapText(node.length, this.height);
@@ -8542,7 +8773,8 @@
            if (measured && measured.from <= offset && measured.more)
                this.setHeight(oracle, measured.heights[measured.index++]);
            else if (force || this.outdated)
-               this.setHeight(oracle, Math.max(this.widgetHeight, oracle.heightForLine(this.length - this.collapsed)));
+               this.setHeight(oracle, Math.max(this.widgetHeight, oracle.heightForLine(this.length - this.collapsed)) +
+                   this.breaks * oracle.lineHeight);
            this.outdated = false;
            return this;
        }
@@ -8552,35 +8784,61 @@
    }
    class HeightMapGap extends HeightMap {
        constructor(length) { super(length, 0); }
-       lines(doc, offset) {
-           let firstLine = doc.lineAt(offset).number, lastLine = doc.lineAt(offset + this.length).number;
-           return { firstLine, lastLine, lineHeight: this.height / (lastLine - firstLine + 1) };
-       }
-       blockAt(height, doc, top, offset) {
-           let { firstLine, lastLine, lineHeight } = this.lines(doc, offset);
-           let line = Math.max(0, Math.min(lastLine - firstLine, Math.floor((height - top) / lineHeight)));
-           let { from, length } = doc.line(firstLine + line);
-           return new BlockInfo(from, length, top + lineHeight * line, lineHeight, BlockType.Text);
-       }
-       lineAt(value, type, doc, top, offset) {
-           if (type == QueryType$1.ByHeight)
-               return this.blockAt(value, doc, top, offset);
-           if (type == QueryType$1.ByPosNoHeight) {
-               let { from, to } = doc.lineAt(value);
-               return new BlockInfo(from, to - from, 0, 0, BlockType.Text);
+       heightMetrics(oracle, offset) {
+           let firstLine = oracle.doc.lineAt(offset).number, lastLine = oracle.doc.lineAt(offset + this.length).number;
+           let lines = lastLine - firstLine + 1;
+           let perLine, perChar = 0;
+           if (oracle.lineWrapping) {
+               let totalPerLine = Math.min(this.height, oracle.lineHeight * lines);
+               perLine = totalPerLine / lines;
+               if (this.length > lines + 1)
+                   perChar = (this.height - totalPerLine) / (this.length - lines - 1);
            }
-           let { firstLine, lineHeight } = this.lines(doc, offset);
-           let { from, length, number } = doc.lineAt(value);
-           return new BlockInfo(from, length, top + lineHeight * (number - firstLine), lineHeight, BlockType.Text);
+           else {
+               perLine = this.height / lines;
+           }
+           return { firstLine, lastLine, perLine, perChar };
        }
-       forEachLine(from, to, doc, top, offset, f) {
-           let { firstLine, lineHeight } = this.lines(doc, offset);
-           for (let pos = Math.max(from, offset), end = Math.min(offset + this.length, to); pos <= end;) {
-               let line = doc.lineAt(pos);
-               if (pos == from)
-                   top += lineHeight * (line.number - firstLine);
-               f(new BlockInfo(line.from, line.length, top, lineHeight, BlockType.Text));
-               top += lineHeight;
+       blockAt(height, oracle, top, offset) {
+           let { firstLine, lastLine, perLine, perChar } = this.heightMetrics(oracle, offset);
+           if (oracle.lineWrapping) {
+               let guess = offset + Math.round(Math.max(0, Math.min(1, (height - top) / this.height)) * this.length);
+               let line = oracle.doc.lineAt(guess), lineHeight = perLine + line.length * perChar;
+               let lineTop = Math.max(top, height - lineHeight / 2);
+               return new BlockInfo(line.from, line.length, lineTop, lineHeight, 0);
+           }
+           else {
+               let line = Math.max(0, Math.min(lastLine - firstLine, Math.floor((height - top) / perLine)));
+               let { from, length } = oracle.doc.line(firstLine + line);
+               return new BlockInfo(from, length, top + perLine * line, perLine, 0);
+           }
+       }
+       lineAt(value, type, oracle, top, offset) {
+           if (type == QueryType$1.ByHeight)
+               return this.blockAt(value, oracle, top, offset);
+           if (type == QueryType$1.ByPosNoHeight) {
+               let { from, to } = oracle.doc.lineAt(value);
+               return new BlockInfo(from, to - from, 0, 0, 0);
+           }
+           let { firstLine, perLine, perChar } = this.heightMetrics(oracle, offset);
+           let line = oracle.doc.lineAt(value), lineHeight = perLine + line.length * perChar;
+           let linesAbove = line.number - firstLine;
+           let lineTop = top + perLine * linesAbove + perChar * (line.from - offset - linesAbove);
+           return new BlockInfo(line.from, line.length, Math.max(top, Math.min(lineTop, top + this.height - lineHeight)), lineHeight, 0);
+       }
+       forEachLine(from, to, oracle, top, offset, f) {
+           from = Math.max(from, offset);
+           to = Math.min(to, offset + this.length);
+           let { firstLine, perLine, perChar } = this.heightMetrics(oracle, offset);
+           for (let pos = from, lineTop = top; pos <= to;) {
+               let line = oracle.doc.lineAt(pos);
+               if (pos == from) {
+                   let linesAbove = line.number - firstLine;
+                   lineTop += perLine * linesAbove + perChar * (from - offset - linesAbove);
+               }
+               let lineHeight = perLine + perChar * line.length;
+               f(new BlockInfo(line.from, line.length, lineTop, lineHeight, 0));
+               lineTop += lineHeight;
                pos = line.to + 1;
            }
        }
@@ -8616,7 +8874,6 @@
                // they would already have been added to the heightmap (gaps
                // only contain plain text).
                let nodes = [], pos = Math.max(offset, measured.from), singleHeight = -1;
-               let wasChanged = oracle.heightChanged;
                if (measured.from > offset)
                    nodes.push(new HeightMapGap(measured.from - offset - 1).updateHeight(oracle, offset));
                while (pos <= end && measured.more) {
@@ -8636,8 +8893,9 @@
                if (pos <= end)
                    nodes.push(null, new HeightMapGap(end - pos).updateHeight(oracle, pos));
                let result = HeightMap.of(nodes);
-               oracle.heightChanged = wasChanged || singleHeight < 0 || Math.abs(result.height - this.height) >= Epsilon ||
-                   Math.abs(singleHeight - this.lines(oracle.doc, offset).lineHeight) >= Epsilon;
+               if (singleHeight < 0 || Math.abs(result.height - this.height) >= Epsilon ||
+                   Math.abs(singleHeight - this.heightMetrics(oracle, offset).perLine) >= Epsilon)
+                   oracle.heightChanged = true;
                return result;
            }
            else if (force || this.outdated) {
@@ -8650,46 +8908,46 @@
    }
    class HeightMapBranch extends HeightMap {
        constructor(left, brk, right) {
-           super(left.length + brk + right.length, left.height + right.height, brk | (left.outdated || right.outdated ? 2 /* Flag.Outdated */ : 0));
+           super(left.length + brk + right.length, left.height + right.height, brk | (left.outdated || right.outdated ? 2 /* Outdated */ : 0));
            this.left = left;
            this.right = right;
            this.size = left.size + right.size;
        }
-       get break() { return this.flags & 1 /* Flag.Break */; }
-       blockAt(height, doc, top, offset) {
+       get break() { return this.flags & 1 /* Break */; }
+       blockAt(height, oracle, top, offset) {
            let mid = top + this.left.height;
-           return height < mid ? this.left.blockAt(height, doc, top, offset)
-               : this.right.blockAt(height, doc, mid, offset + this.left.length + this.break);
+           return height < mid ? this.left.blockAt(height, oracle, top, offset)
+               : this.right.blockAt(height, oracle, mid, offset + this.left.length + this.break);
        }
-       lineAt(value, type, doc, top, offset) {
+       lineAt(value, type, oracle, top, offset) {
            let rightTop = top + this.left.height, rightOffset = offset + this.left.length + this.break;
            let left = type == QueryType$1.ByHeight ? value < rightTop : value < rightOffset;
-           let base = left ? this.left.lineAt(value, type, doc, top, offset)
-               : this.right.lineAt(value, type, doc, rightTop, rightOffset);
+           let base = left ? this.left.lineAt(value, type, oracle, top, offset)
+               : this.right.lineAt(value, type, oracle, rightTop, rightOffset);
            if (this.break || (left ? base.to < rightOffset : base.from > rightOffset))
                return base;
            let subQuery = type == QueryType$1.ByPosNoHeight ? QueryType$1.ByPosNoHeight : QueryType$1.ByPos;
            if (left)
-               return base.join(this.right.lineAt(rightOffset, subQuery, doc, rightTop, rightOffset));
+               return base.join(this.right.lineAt(rightOffset, subQuery, oracle, rightTop, rightOffset));
            else
-               return this.left.lineAt(rightOffset, subQuery, doc, top, offset).join(base);
+               return this.left.lineAt(rightOffset, subQuery, oracle, top, offset).join(base);
        }
-       forEachLine(from, to, doc, top, offset, f) {
+       forEachLine(from, to, oracle, top, offset, f) {
            let rightTop = top + this.left.height, rightOffset = offset + this.left.length + this.break;
            if (this.break) {
                if (from < rightOffset)
-                   this.left.forEachLine(from, to, doc, top, offset, f);
+                   this.left.forEachLine(from, to, oracle, top, offset, f);
                if (to >= rightOffset)
-                   this.right.forEachLine(from, to, doc, rightTop, rightOffset, f);
+                   this.right.forEachLine(from, to, oracle, rightTop, rightOffset, f);
            }
            else {
-               let mid = this.lineAt(rightOffset, QueryType$1.ByPos, doc, top, offset);
+               let mid = this.lineAt(rightOffset, QueryType$1.ByPos, oracle, top, offset);
                if (from < mid.from)
-                   this.left.forEachLine(from, mid.from - 1, doc, top, offset, f);
+                   this.left.forEachLine(from, mid.from - 1, oracle, top, offset, f);
                if (mid.to >= from && mid.from <= to)
                    f(mid);
                if (to > mid.to)
-                   this.right.forEachLine(mid.to + 1, to, doc, rightTop, rightOffset, f);
+                   this.right.forEachLine(mid.to + 1, to, oracle, rightTop, rightOffset, f);
            }
        }
        replace(from, to, nodes) {
@@ -8805,14 +9063,15 @@
        point(from, to, deco) {
            if (from < to || deco.heightRelevant) {
                let height = deco.widget ? deco.widget.estimatedHeight : 0;
+               let breaks = deco.widget ? deco.widget.lineBreaks : 0;
                if (height < 0)
                    height = this.oracle.lineHeight;
                let len = to - from;
                if (deco.block) {
-                   this.addBlock(new HeightMapBlock(len, height, deco.type));
+                   this.addBlock(new HeightMapBlock(len, height, deco));
                }
-               else if (len || height >= relevantWidgetHeight) {
-                   this.addLineDeco(height, len);
+               else if (len || breaks || height >= relevantWidgetHeight) {
+                   this.addLineDeco(height, breaks, len);
                }
            }
            else if (to > from) {
@@ -8839,7 +9098,7 @@
        blankContent(from, to) {
            let gap = new HeightMapGap(to - from);
            if (this.oracle.doc.lineAt(from).to == to)
-               gap.flags |= 4 /* Flag.SingleLine */;
+               gap.flags |= 4 /* SingleLine */;
            return gap;
        }
        ensureLine() {
@@ -8852,19 +9111,22 @@
            return line;
        }
        addBlock(block) {
+           var _a;
            this.enterLine();
-           if (block.type == BlockType.WidgetAfter && !this.isCovered)
+           let type = (_a = block.deco) === null || _a === void 0 ? void 0 : _a.type;
+           if (type == BlockType.WidgetAfter && !this.isCovered)
                this.ensureLine();
            this.nodes.push(block);
            this.writtenTo = this.pos = this.pos + block.length;
-           if (block.type != BlockType.WidgetBefore)
+           if (type != BlockType.WidgetBefore)
                this.covering = block;
        }
-       addLineDeco(height, length) {
+       addLineDeco(height, breaks, length) {
            let line = this.ensureLine();
            line.length += length;
            line.collapsed += length;
            line.widgetHeight = Math.max(line.widgetHeight, height);
+           line.breaks += breaks;
            this.writtenTo = this.pos = this.pos + length;
        }
        finish(from) {
@@ -8998,6 +9260,14 @@
            this.contentDOMHeight = 0;
            this.editorHeight = 0;
            this.editorWidth = 0;
+           this.scrollTop = 0;
+           this.scrolledToBottom = true;
+           // The vertical position (document-relative) to which to anchor the
+           // scroll position. -1 means anchor to the end of the document.
+           this.scrollAnchorPos = 0;
+           // The height at the anchor position. Set by the DOM update phase.
+           // -1 means no height available.
+           this.scrollAnchorHeight = -1;
            // See VP.MaxDOMHeight
            this.scaler = IdScaler;
            this.scrollTarget = null;
@@ -9038,12 +9308,12 @@
                }
            }
            this.viewports = viewports.sort((a, b) => a.from - b.from);
-           this.scaler = this.heightMap.height <= 7000000 /* VP.MaxDOMHeight */ ? IdScaler :
-               new BigScaler(this.heightOracle.doc, this.heightMap, this.viewports);
+           this.scaler = this.heightMap.height <= 7000000 /* MaxDOMHeight */ ? IdScaler :
+               new BigScaler(this.heightOracle, this.heightMap, this.viewports);
        }
        updateViewportLines() {
            this.viewportLines = [];
-           this.heightMap.forEachLine(this.viewport.from, this.viewport.to, this.state.doc, 0, 0, block => {
+           this.heightMap.forEachLine(this.viewport.from, this.viewport.to, this.heightOracle.setDoc(this.state.doc), 0, 0, block => {
                this.viewportLines.push(this.scaler.scale == 1 ? block : scaleBlock(block, this.scaler));
            });
        }
@@ -9054,20 +9324,29 @@
            let contentChanges = update.changedRanges;
            let heightChanges = ChangedRange.extendWithRanges(contentChanges, heightRelevantDecoChanges(prevDeco, this.stateDeco, update ? update.changes : ChangeSet.empty(this.state.doc.length)));
            let prevHeight = this.heightMap.height;
+           let scrollAnchor = this.scrolledToBottom ? null : this.lineBlockAtHeight(this.scrollTop);
            this.heightMap = this.heightMap.applyChanges(this.stateDeco, update.startState.doc, this.heightOracle.setDoc(this.state.doc), heightChanges);
            if (this.heightMap.height != prevHeight)
-               update.flags |= 2 /* UpdateFlag.Height */;
+               update.flags |= 2 /* Height */;
+           if (scrollAnchor) {
+               this.scrollAnchorPos = update.changes.mapPos(scrollAnchor.from, -1);
+               this.scrollAnchorHeight = scrollAnchor.top;
+           }
+           else {
+               this.scrollAnchorPos = -1;
+               this.scrollAnchorHeight = this.heightMap.height;
+           }
            let viewport = heightChanges.length ? this.mapViewport(this.viewport, update.changes) : this.viewport;
            if (scrollTarget && (scrollTarget.range.head < viewport.from || scrollTarget.range.head > viewport.to) ||
                !this.viewportIsAppropriate(viewport))
                viewport = this.getViewport(0, scrollTarget);
-           let updateLines = !update.changes.empty || (update.flags & 2 /* UpdateFlag.Height */) ||
+           let updateLines = !update.changes.empty || (update.flags & 2 /* Height */) ||
                viewport.from != this.viewport.from || viewport.to != this.viewport.to;
            this.viewport = viewport;
            this.updateForViewport();
            if (updateLines)
                this.updateViewportLines();
-           if (this.lineGaps.length || this.viewport.to - this.viewport.from > (2000 /* LG.Margin */ << 1))
+           if (this.lineGaps.length || this.viewport.to - this.viewport.from > (2000 /* Margin */ << 1))
                this.updateLineGaps(this.ensureLineGaps(this.mapLineGaps(this.lineGaps, update.changes)));
            update.flags |= this.computeVisibleRanges();
            if (scrollTarget)
@@ -9083,8 +9362,9 @@
            let whiteSpace = style.whiteSpace;
            this.defaultTextDirection = style.direction == "rtl" ? Direction.RTL : Direction.LTR;
            let refresh = this.heightOracle.mustRefreshForWrapping(whiteSpace);
-           let measureContent = refresh || this.mustMeasureContent || this.contentDOMHeight != dom.clientHeight;
-           this.contentDOMHeight = dom.clientHeight;
+           let domRect = dom.getBoundingClientRect();
+           let measureContent = refresh || this.mustMeasureContent || this.contentDOMHeight != domRect.height;
+           this.contentDOMHeight = domRect.height;
            this.mustMeasureContent = false;
            let result = 0, bias = 0;
            // Vertical padding
@@ -9092,14 +9372,19 @@
            if (this.paddingTop != paddingTop || this.paddingBottom != paddingBottom) {
                this.paddingTop = paddingTop;
                this.paddingBottom = paddingBottom;
-               result |= 8 /* UpdateFlag.Geometry */ | 2 /* UpdateFlag.Height */;
+               result |= 8 /* Geometry */ | 2 /* Height */;
            }
            if (this.editorWidth != view.scrollDOM.clientWidth) {
                if (oracle.lineWrapping)
                    measureContent = true;
                this.editorWidth = view.scrollDOM.clientWidth;
-               result |= 8 /* UpdateFlag.Geometry */;
+               result |= 8 /* Geometry */;
            }
+           if (this.scrollTop != view.scrollDOM.scrollTop) {
+               this.scrollAnchorHeight = -1;
+               this.scrollTop = view.scrollDOM.scrollTop;
+           }
+           this.scrolledToBottom = this.scrollTop > view.scrollDOM.scrollHeight - view.scrollDOM.clientHeight - 4;
            // Pixel viewport
            let pixelViewport = (this.printing ? fullPixelRange : visiblePixelRange)(dom, this.paddingTop);
            let dTop = pixelViewport.top - this.pixelViewport.top, dBottom = pixelViewport.bottom - this.pixelViewport.bottom;
@@ -9112,22 +9397,22 @@
            }
            if (!this.inView && !this.scrollTarget)
                return 0;
-           let contentWidth = dom.clientWidth;
+           let contentWidth = domRect.width;
            if (this.contentDOMWidth != contentWidth || this.editorHeight != view.scrollDOM.clientHeight) {
-               this.contentDOMWidth = contentWidth;
+               this.contentDOMWidth = domRect.width;
                this.editorHeight = view.scrollDOM.clientHeight;
-               result |= 8 /* UpdateFlag.Geometry */;
+               result |= 8 /* Geometry */;
            }
            if (measureContent) {
                let lineHeights = view.docView.measureVisibleLineHeights(this.viewport);
                if (oracle.mustRefreshForHeights(lineHeights))
                    refresh = true;
                if (refresh || oracle.lineWrapping && Math.abs(contentWidth - this.contentDOMWidth) > oracle.charWidth) {
-                   let { lineHeight, charWidth } = view.docView.measureTextSize();
-                   refresh = lineHeight > 0 && oracle.refresh(whiteSpace, lineHeight, charWidth, contentWidth / charWidth, lineHeights);
+                   let { lineHeight, charWidth, textHeight } = view.docView.measureTextSize();
+                   refresh = lineHeight > 0 && oracle.refresh(whiteSpace, lineHeight, charWidth, textHeight, contentWidth / charWidth, lineHeights);
                    if (refresh) {
                        view.docView.minWidth = 0;
-                       result |= 8 /* UpdateFlag.Geometry */;
+                       result |= 8 /* Geometry */;
                    }
                }
                if (dTop > 0 && dBottom > 0)
@@ -9140,16 +9425,17 @@
                    this.heightMap = (refresh ? HeightMap.empty().applyChanges(this.stateDeco, Text.empty, this.heightOracle, [new ChangedRange(0, 0, 0, view.state.doc.length)]) : this.heightMap).updateHeight(oracle, 0, refresh, new MeasuredHeights(vp.from, heights));
                }
                if (oracle.heightChanged)
-                   result |= 2 /* UpdateFlag.Height */;
+                   result |= 2 /* Height */;
            }
            let viewportChange = !this.viewportIsAppropriate(this.viewport, bias) ||
-               this.scrollTarget && (this.scrollTarget.range.head < this.viewport.from || this.scrollTarget.range.head > this.viewport.to);
+               this.scrollTarget && (this.scrollTarget.range.head < this.viewport.from ||
+                   this.scrollTarget.range.head > this.viewport.to);
            if (viewportChange)
                this.viewport = this.getViewport(bias, this.scrollTarget);
            this.updateForViewport();
-           if ((result & 2 /* UpdateFlag.Height */) || viewportChange)
+           if ((result & 2 /* Height */) || viewportChange)
                this.updateViewportLines();
-           if (this.lineGaps.length || this.viewport.to - this.viewport.from > (2000 /* LG.Margin */ << 1))
+           if (this.lineGaps.length || this.viewport.to - this.viewport.from > (2000 /* Margin */ << 1))
                this.updateLineGaps(this.ensureLineGaps(refresh ? [] : this.lineGaps, view));
            result |= this.computeVisibleRanges();
            if (this.mustEnforceCursorAssoc) {
@@ -9168,42 +9454,43 @@
            // This will divide VP.Margin between the top and the
            // bottom, depending on the bias (the change in viewport position
            // since the last update). It'll hold a number between 0 and 1
-           let marginTop = 0.5 - Math.max(-0.5, Math.min(0.5, bias / 1000 /* VP.Margin */ / 2));
-           let map = this.heightMap, doc = this.state.doc, { visibleTop, visibleBottom } = this;
-           let viewport = new Viewport(map.lineAt(visibleTop - marginTop * 1000 /* VP.Margin */, QueryType$1.ByHeight, doc, 0, 0).from, map.lineAt(visibleBottom + (1 - marginTop) * 1000 /* VP.Margin */, QueryType$1.ByHeight, doc, 0, 0).to);
+           let marginTop = 0.5 - Math.max(-0.5, Math.min(0.5, bias / 1000 /* Margin */ / 2));
+           let map = this.heightMap, oracle = this.heightOracle;
+           let { visibleTop, visibleBottom } = this;
+           let viewport = new Viewport(map.lineAt(visibleTop - marginTop * 1000 /* Margin */, QueryType$1.ByHeight, oracle, 0, 0).from, map.lineAt(visibleBottom + (1 - marginTop) * 1000 /* Margin */, QueryType$1.ByHeight, oracle, 0, 0).to);
            // If scrollTarget is given, make sure the viewport includes that position
            if (scrollTarget) {
                let { head } = scrollTarget.range;
                if (head < viewport.from || head > viewport.to) {
                    let viewHeight = Math.min(this.editorHeight, this.pixelViewport.bottom - this.pixelViewport.top);
-                   let block = map.lineAt(head, QueryType$1.ByPos, doc, 0, 0), topPos;
+                   let block = map.lineAt(head, QueryType$1.ByPos, oracle, 0, 0), topPos;
                    if (scrollTarget.y == "center")
                        topPos = (block.top + block.bottom) / 2 - viewHeight / 2;
                    else if (scrollTarget.y == "start" || scrollTarget.y == "nearest" && head < viewport.from)
                        topPos = block.top;
                    else
                        topPos = block.bottom - viewHeight;
-                   viewport = new Viewport(map.lineAt(topPos - 1000 /* VP.Margin */ / 2, QueryType$1.ByHeight, doc, 0, 0).from, map.lineAt(topPos + viewHeight + 1000 /* VP.Margin */ / 2, QueryType$1.ByHeight, doc, 0, 0).to);
+                   viewport = new Viewport(map.lineAt(topPos - 1000 /* Margin */ / 2, QueryType$1.ByHeight, oracle, 0, 0).from, map.lineAt(topPos + viewHeight + 1000 /* Margin */ / 2, QueryType$1.ByHeight, oracle, 0, 0).to);
                }
            }
            return viewport;
        }
        mapViewport(viewport, changes) {
            let from = changes.mapPos(viewport.from, -1), to = changes.mapPos(viewport.to, 1);
-           return new Viewport(this.heightMap.lineAt(from, QueryType$1.ByPos, this.state.doc, 0, 0).from, this.heightMap.lineAt(to, QueryType$1.ByPos, this.state.doc, 0, 0).to);
+           return new Viewport(this.heightMap.lineAt(from, QueryType$1.ByPos, this.heightOracle, 0, 0).from, this.heightMap.lineAt(to, QueryType$1.ByPos, this.heightOracle, 0, 0).to);
        }
        // Checks if a given viewport covers the visible part of the
        // document and not too much beyond that.
        viewportIsAppropriate({ from, to }, bias = 0) {
            if (!this.inView)
                return true;
-           let { top } = this.heightMap.lineAt(from, QueryType$1.ByPos, this.state.doc, 0, 0);
-           let { bottom } = this.heightMap.lineAt(to, QueryType$1.ByPos, this.state.doc, 0, 0);
+           let { top } = this.heightMap.lineAt(from, QueryType$1.ByPos, this.heightOracle, 0, 0);
+           let { bottom } = this.heightMap.lineAt(to, QueryType$1.ByPos, this.heightOracle, 0, 0);
            let { visibleTop, visibleBottom } = this;
-           return (from == 0 || top <= visibleTop - Math.max(10 /* VP.MinCoverMargin */, Math.min(-bias, 250 /* VP.MaxCoverMargin */))) &&
+           return (from == 0 || top <= visibleTop - Math.max(10 /* MinCoverMargin */, Math.min(-bias, 250 /* MaxCoverMargin */))) &&
                (to == this.state.doc.length ||
-                   bottom >= visibleBottom + Math.max(10 /* VP.MinCoverMargin */, Math.min(bias, 250 /* VP.MaxCoverMargin */))) &&
-               (top > visibleTop - 2 * 1000 /* VP.Margin */ && bottom < visibleBottom + 2 * 1000 /* VP.Margin */);
+                   bottom >= visibleBottom + Math.max(10 /* MinCoverMargin */, Math.min(bias, 250 /* MaxCoverMargin */))) &&
+               (top > visibleTop - 2 * 1000 /* Margin */ && bottom < visibleBottom + 2 * 1000 /* Margin */);
        }
        mapLineGaps(gaps, changes) {
            if (!gaps.length || changes.empty)
@@ -9223,7 +9510,7 @@
        // the artifacts this might produce from the user.
        ensureLineGaps(current, mayMeasure) {
            let wrapping = this.heightOracle.lineWrapping;
-           let margin = wrapping ? 10000 /* LG.MarginWrap */ : 2000 /* LG.Margin */, halfMargin = margin >> 1, doubleMargin = margin << 1;
+           let margin = wrapping ? 10000 /* MarginWrap */ : 2000 /* Margin */, halfMargin = margin >> 1, doubleMargin = margin << 1;
            // The non-wrapping logic won't work at all in predominantly right-to-left text.
            if (this.defaultTextDirection != Direction.LTR && !wrapping)
                return [];
@@ -9236,8 +9523,8 @@
                    avoid.push(sel.to);
                for (let pos of avoid) {
                    if (pos > from && pos < to) {
-                       addGap(from, pos - 10 /* LG.SelectionMargin */, line, structure);
-                       addGap(pos + 10 /* LG.SelectionMargin */, to, line, structure);
+                       addGap(from, pos - 10 /* SelectionMargin */, line, structure);
+                       addGap(pos + 10 /* SelectionMargin */, to, line, structure);
                        return;
                    }
                }
@@ -9331,17 +9618,17 @@
            let changed = ranges.length != this.visibleRanges.length ||
                this.visibleRanges.some((r, i) => r.from != ranges[i].from || r.to != ranges[i].to);
            this.visibleRanges = ranges;
-           return changed ? 4 /* UpdateFlag.Viewport */ : 0;
+           return changed ? 4 /* Viewport */ : 0;
        }
        lineBlockAt(pos) {
            return (pos >= this.viewport.from && pos <= this.viewport.to && this.viewportLines.find(b => b.from <= pos && b.to >= pos)) ||
-               scaleBlock(this.heightMap.lineAt(pos, QueryType$1.ByPos, this.state.doc, 0, 0), this.scaler);
+               scaleBlock(this.heightMap.lineAt(pos, QueryType$1.ByPos, this.heightOracle, 0, 0), this.scaler);
        }
        lineBlockAtHeight(height) {
-           return scaleBlock(this.heightMap.lineAt(this.scaler.fromDOM(height), QueryType$1.ByHeight, this.state.doc, 0, 0), this.scaler);
+           return scaleBlock(this.heightMap.lineAt(this.scaler.fromDOM(height), QueryType$1.ByHeight, this.heightOracle, 0, 0), this.scaler);
        }
        elementAtHeight(height) {
-           return scaleBlock(this.heightMap.blockAt(this.scaler.fromDOM(height), this.state.doc, 0, 0), this.scaler);
+           return scaleBlock(this.heightMap.blockAt(this.scaler.fromDOM(height), this.heightOracle, 0, 0), this.scaler);
        }
        get docHeight() {
            return this.scaler.toDOM(this.heightMap.height);
@@ -9415,15 +9702,15 @@
    // regions outside the viewports so that the total height is
    // VP.MaxDOMHeight.
    class BigScaler {
-       constructor(doc, heightMap, viewports) {
+       constructor(oracle, heightMap, viewports) {
            let vpHeight = 0, base = 0, domBase = 0;
            this.viewports = viewports.map(({ from, to }) => {
-               let top = heightMap.lineAt(from, QueryType$1.ByPos, doc, 0, 0).top;
-               let bottom = heightMap.lineAt(to, QueryType$1.ByPos, doc, 0, 0).bottom;
+               let top = heightMap.lineAt(from, QueryType$1.ByPos, oracle, 0, 0).top;
+               let bottom = heightMap.lineAt(to, QueryType$1.ByPos, oracle, 0, 0).bottom;
                vpHeight += bottom - top;
                return { from, to, top, bottom, domTop: 0, domBottom: 0 };
            });
-           this.scale = (7000000 /* VP.MaxDOMHeight */ - vpHeight) / (heightMap.height - vpHeight);
+           this.scale = (7000000 /* MaxDOMHeight */ - vpHeight) / (heightMap.height - vpHeight);
            for (let obj of this.viewports) {
                obj.domTop = domBase + (obj.top - base) * this.scale;
                domBase = obj.domBottom = obj.domTop + (obj.bottom - obj.top);
@@ -9457,7 +9744,7 @@
        if (scaler.scale == 1)
            return block;
        let bTop = scaler.toDOM(block.top), bBottom = scaler.toDOM(block.bottom);
-       return new BlockInfo(block.from, block.length, bTop, bBottom - bTop, Array.isArray(block.type) ? block.type.map(b => scaleBlock(b, scaler)) : block.type);
+       return new BlockInfo(block.from, block.length, bTop, bBottom - bTop, Array.isArray(block._content) ? block._content.map(b => scaleBlock(b, scaler)) : block._content);
    }
 
    const theme = /*@__PURE__*/Facet.define({ combine: strs => strs.join(" ") });
@@ -9478,7 +9765,7 @@
        });
    }
    const baseTheme$1$3 = /*@__PURE__*/buildTheme("." + baseThemeID, {
-       "&.cm-editor": {
+       "&": {
            position: "relative !important",
            boxSizing: "border-box",
            "&.cm-focused": {
@@ -9533,6 +9820,9 @@
            padding: "0 2px 0 6px"
        },
        ".cm-layer": {
+           position: "absolute",
+           left: 0,
+           top: 0,
            contain: "size style",
            "& > *": {
                position: "absolute"
@@ -9544,16 +9834,16 @@
        "&dark .cm-selectionBackground": {
            background: "#222"
        },
-       "&light.cm-focused .cm-selectionBackground": {
+       "&light.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
            background: "#d7d4f0"
        },
-       "&dark.cm-focused .cm-selectionBackground": {
+       "&dark.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
            background: "#233"
        },
        ".cm-cursorLayer": {
            pointerEvents: "none"
        },
-       "&.cm-focused .cm-cursorLayer": {
+       "&.cm-focused > .cm-scroller > .cm-cursorLayer": {
            animation: "steps(1) cm-blink 1.2s infinite"
        },
        // Two animations defined so that we can switch between them to
@@ -9572,7 +9862,10 @@
        "&dark .cm-cursor": {
            borderLeftColor: "#444"
        },
-       "&.cm-focused .cm-cursor": {
+       ".cm-dropCursor": {
+           position: "absolute"
+       },
+       "&.cm-focused > .cm-scroller > .cm-cursorLayer .cm-cursor": {
            display: "block"
        },
        "&light .cm-activeLine": { backgroundColor: "#cceeff44" },
@@ -9741,13 +10034,13 @@
    function applyDOMChange(view, domChange) {
        let change;
        let { newSel } = domChange, sel = view.state.selection.main;
+       let lastKey = view.inputState.lastKeyTime > Date.now() - 100 ? view.inputState.lastKeyCode : -1;
        if (domChange.bounds) {
            let { from, to } = domChange.bounds;
            let preferredPos = sel.from, preferredSide = null;
            // Prefer anchoring to end when Backspace is pressed (or, on
            // Android, when something was deleted)
-           if (view.inputState.lastKeyCode === 8 && view.inputState.lastKeyTime > Date.now() - 100 ||
-               browser.android && domChange.text.length < to - from) {
+           if (lastKey === 8 || browser.android && domChange.text.length < to - from) {
                preferredPos = sel.to;
                preferredSide = "end";
            }
@@ -9755,14 +10048,14 @@
            if (diff) {
                // Chrome inserts two newlines when pressing shift-enter at the
                // end of a line. DomChange drops one of those.
-               if (browser.chrome && view.inputState.lastKeyCode == 13 &&
+               if (browser.chrome && lastKey == 13 &&
                    diff.toB == diff.from + 2 && domChange.text.slice(diff.from, diff.toB) == LineBreakPlaceholder + LineBreakPlaceholder)
                    diff.toB--;
                change = { from: from + diff.from, to: from + diff.toA,
                    insert: Text.of(domChange.text.slice(diff.from, diff.toB).split(LineBreakPlaceholder)) };
            }
        }
-       else if (newSel && (!view.hasFocus || !view.state.facet(editable) || newSel.main.eq(sel))) {
+       else if (newSel && (!view.hasFocus && view.state.facet(editable) || newSel.main.eq(sel))) {
            newSel = null;
        }
        if (!change && !newSel)
@@ -9783,7 +10076,7 @@
            };
        }
        else if ((browser.mac || browser.android) && change && change.from == change.to && change.from == sel.head - 1 &&
-           /^\. ?$/.test(change.insert.toString())) {
+           /^\. ?$/.test(change.insert.toString()) && view.contentDOM.getAttribute("autocorrect") == "off") {
            // Detect insert-period-on-double-space Mac and Android behavior,
            // and transform it into a regular space insert.
            if (newSel && change.insert.length == 2)
@@ -9813,7 +10106,8 @@
                ((change.from == sel.from && change.to == sel.to &&
                    change.insert.length == 1 && change.insert.lines == 2 &&
                    dispatchKey(view.contentDOM, "Enter", 13)) ||
-                   (change.from == sel.from - 1 && change.to == sel.to && change.insert.length == 0 &&
+                   ((change.from == sel.from - 1 && change.to == sel.to && change.insert.length == 0 ||
+                       lastKey == 8 && change.insert.length < change.to - change.from) &&
                        dispatchKey(view.contentDOM, "Backspace", 8)) ||
                    (change.from == sel.from && change.to == sel.to + 1 && change.insert.length == 0 &&
                        dispatchKey(view.contentDOM, "Delete", 46))))
@@ -9833,8 +10127,7 @@
            }
            else {
                let changes = startState.changes(change);
-               let mainSel = newSel && !startState.selection.main.eq(newSel.main) && newSel.main.to <= changes.newLength
-                   ? newSel.main : undefined;
+               let mainSel = newSel && newSel.main.to <= changes.newLength ? newSel.main : undefined;
                // Try to apply a composition change to all cursors
                if (startState.selection.ranges.length > 1 && view.inputState.composing >= 0 &&
                    change.to <= sel.to && change.to >= sel.to - 10) {
@@ -9868,7 +10161,9 @@
                }
            }
            let userEvent = "input.type";
-           if (view.composing) {
+           if (view.composing ||
+               view.inputState.compositionPendingChange && view.inputState.compositionEndedAt > Date.now() - 50) {
+               view.inputState.compositionPendingChange = false;
                userEvent += ".compose";
                if (view.inputState.compositionFirstChange) {
                    userEvent += ".start";
@@ -10031,7 +10326,7 @@
                        if (this.intersecting != this.view.inView)
                            this.onScrollChanged(document.createEvent("Event"));
                    }
-               }, {});
+               }, { threshold: [0, .001] });
                this.intersection.observe(this.dom);
                this.gapIntersection = new IntersectionObserver(entries => {
                    if (entries.length > 0 && entries[entries.length - 1].intersectionRatio > 0)
@@ -10210,7 +10505,10 @@
                    let key = this.delayedAndroidKey;
                    if (key) {
                        this.clearDelayedAndroidKey();
-                       if (!this.flush() && key.force)
+                       this.view.inputState.lastKeyCode = key.keyCode;
+                       this.view.inputState.lastKeyTime = Date.now();
+                       let flushed = this.flush();
+                       if (!flushed && key.force)
                            dispatchKey(this.dom, key.key, key.keyCode);
                    }
                };
@@ -10244,10 +10542,13 @@
            }
            this.flush();
        }
-       processRecords() {
-           let records = this.queue;
+       pendingRecords() {
            for (let mut of this.observer.takeRecords())
-               records.push(mut);
+               this.queue.push(mut);
+           return this.queue;
+       }
+       processRecords() {
+           let records = this.pendingRecords();
            if (records.length)
                this.queue = [];
            let from = -1, to = -1, typeOver = false;
@@ -10303,7 +10604,7 @@
                return null;
            cView.markDirty(rec.type == "attributes");
            if (rec.type == "attributes")
-               cView.dirty |= 4 /* Dirty.Attrs */;
+               cView.dirty |= 4 /* Attrs */;
            if (rec.type == "childList") {
                let childBefore = findChild(cView, rec.previousSibling || rec.target.previousSibling, -1);
                let childAfter = findChild(cView, rec.nextSibling || rec.target.nextSibling, 1);
@@ -10426,7 +10727,7 @@
            /**
            @internal
            */
-           this.updateState = 2 /* UpdateState.Updating */;
+           this.updateState = 2 /* Updating */;
            /**
            @internal
            */
@@ -10459,7 +10760,7 @@
            this.docView = new DocView(this);
            this.mountStyles();
            this.updateAttrs();
-           this.updateState = 0 /* UpdateState.Idle */;
+           this.updateState = 0 /* Idle */;
            this.requestMeasure();
            if (config.parent)
                config.parent.appendChild(this.dom);
@@ -10512,8 +10813,9 @@
        */
        get win() { return this.dom.ownerDocument.defaultView || window; }
        dispatch(...input) {
-           this._dispatch(input.length == 1 && input[0] instanceof Transaction ? input[0]
-               : this.state.update(...input));
+           let tr = input.length == 1 && input[0] instanceof Transaction ? input[0]
+               : this.state.update(...input);
+           this._dispatch(tr, this);
        }
        /**
        Update the view for the given array of transactions. This will
@@ -10524,7 +10826,7 @@
        as a primitive.
        */
        update(transactions) {
-           if (this.updateState != 0 /* UpdateState.Idle */)
+           if (this.updateState != 0 /* Idle */)
                throw new Error("Calls to EditorView.update are not allowed while an update is in progress");
            let redrawn = false, attrsChanged = false, update;
            let state = this.state;
@@ -10536,6 +10838,20 @@
            if (this.destroyed) {
                this.viewState.state = state;
                return;
+           }
+           let focus = this.hasFocus, focusFlag = 0, dispatchFocus = null;
+           if (transactions.some(tr => tr.annotation(isFocusChange))) {
+               this.inputState.notifiedFocused = focus;
+               // If a focus-change transaction is being dispatched, set this update flag.
+               focusFlag = 1 /* Focus */;
+           }
+           else if (focus != this.inputState.notifiedFocused) {
+               this.inputState.notifiedFocused = focus;
+               // Schedule a separate focus transaction if necessary, otherwise
+               // add a flag to this update
+               dispatchFocus = focusChangeTransaction(state, focus);
+               if (!dispatchFocus)
+                   focusFlag = 1 /* Focus */;
            }
            // If there was a pending DOM change, eagerly read it and try to
            // apply it after the given transactions.
@@ -10555,9 +10871,10 @@
            if (state.facet(EditorState.phrases) != this.state.facet(EditorState.phrases))
                return this.setState(state);
            update = ViewUpdate.create(this, state, transactions);
+           update.flags |= focusFlag;
            let scrollTarget = this.viewState.scrollTarget;
            try {
-               this.updateState = 2 /* UpdateState.Updating */;
+               this.updateState = 2 /* Updating */;
                for (let tr of transactions) {
                    if (scrollTarget)
                        scrollTarget = scrollTarget.map(tr.changes);
@@ -10583,7 +10900,7 @@
                this.docView.updateSelection(redrawn, transactions.some(tr => tr.isUserEvent("select.pointer")));
            }
            finally {
-               this.updateState = 0 /* UpdateState.Idle */;
+               this.updateState = 0 /* Idle */;
            }
            if (update.startState.facet(theme) != update.state.facet(theme))
                this.viewState.mustMeasureContent = true;
@@ -10592,10 +10909,15 @@
            if (!update.empty)
                for (let listener of this.state.facet(updateListener))
                    listener(update);
-           if (domChange) {
-               if (!applyDOMChange(this, domChange) && pendingKey.force)
-                   dispatchKey(this.contentDOM, pendingKey.key, pendingKey.keyCode);
-           }
+           if (dispatchFocus || domChange)
+               Promise.resolve().then(() => {
+                   if (dispatchFocus && this.state == dispatchFocus.startState)
+                       this.dispatch(dispatchFocus);
+                   if (domChange) {
+                       if (!applyDOMChange(this, domChange) && pendingKey.force)
+                           dispatchKey(this.contentDOM, pendingKey.key, pendingKey.keyCode);
+                   }
+               });
        }
        /**
        Reset the view to the given state. (This will cause the entire
@@ -10605,13 +10927,13 @@
        [`dispatch`](https://codemirror.net/6/docs/ref/#view.EditorView.dispatch) instead.)
        */
        setState(newState) {
-           if (this.updateState != 0 /* UpdateState.Idle */)
+           if (this.updateState != 0 /* Idle */)
                throw new Error("Calls to EditorView.setState are not allowed while an update is in progress");
            if (this.destroyed) {
                this.viewState.state = newState;
                return;
            }
-           this.updateState = 2 /* UpdateState.Updating */;
+           this.updateState = 2 /* Updating */;
            let hadFocus = this.hasFocus;
            try {
                for (let plugin of this.plugins)
@@ -10628,7 +10950,7 @@
                this.bidiCache = [];
            }
            finally {
-               this.updateState = 0 /* UpdateState.Idle */;
+               this.updateState = 0 /* Idle */;
            }
            if (hadFocus)
                this.focus();
@@ -10670,18 +10992,29 @@
            if (this.destroyed)
                return;
            if (this.measureScheduled > -1)
-               cancelAnimationFrame(this.measureScheduled);
+               this.win.cancelAnimationFrame(this.measureScheduled);
            this.measureScheduled = 0; // Prevent requestMeasure calls from scheduling another animation frame
            if (flush)
                this.observer.forceFlush();
            let updated = null;
-           let { scrollHeight, scrollTop, clientHeight } = this.scrollDOM;
-           let refHeight = scrollTop > scrollHeight - clientHeight - 4 ? scrollHeight : scrollTop;
+           let sDOM = this.scrollDOM, { scrollTop } = sDOM;
+           let { scrollAnchorPos, scrollAnchorHeight } = this.viewState;
+           this.viewState.scrollAnchorHeight = -1;
+           if (scrollAnchorHeight < 0 || scrollTop != this.viewState.scrollTop) {
+               if (scrollTop > sDOM.scrollHeight - sDOM.clientHeight - 4) {
+                   scrollAnchorPos = -1;
+                   scrollAnchorHeight = this.viewState.heightMap.height;
+               }
+               else {
+                   let block = this.viewState.lineBlockAtHeight(scrollTop);
+                   scrollAnchorPos = block.from;
+                   scrollAnchorHeight = block.top;
+               }
+           }
            try {
                for (let i = 0;; i++) {
-                   this.updateState = 1 /* UpdateState.Measuring */;
+                   this.updateState = 1 /* Measuring */;
                    let oldViewport = this.viewport;
-                   let refBlock = this.viewState.lineBlockAtHeight(refHeight);
                    let changed = this.viewState.measure(this);
                    if (!changed && !this.measureRequests.length && this.viewState.scrollTarget == null)
                        break;
@@ -10693,7 +11026,7 @@
                    }
                    let measuring = [];
                    // Only run measure requests in this cycle when the viewport didn't change
-                   if (!(changed & 4 /* UpdateFlag.Viewport */))
+                   if (!(changed & 4 /* Viewport */))
                        [this.measureRequests, measuring] = [measuring, this.measureRequests];
                    let measured = measuring.map(m => {
                        try {
@@ -10710,7 +11043,7 @@
                        updated = update;
                    else
                        updated.flags |= changed;
-                   this.updateState = 2 /* UpdateState.Updating */;
+                   this.updateState = 2 /* Updating */;
                    if (!update.empty) {
                        this.updatePlugins(update);
                        this.inputState.update(update);
@@ -10734,10 +11067,12 @@
                            this.viewState.scrollTarget = null;
                            scrolled = true;
                        }
-                       else {
-                           let diff = this.viewState.lineBlockAt(refBlock.from).top - refBlock.top;
+                       else if (scrollAnchorHeight > -1) {
+                           let newAnchorHeight = scrollAnchorPos < 0 ? this.viewState.heightMap.height :
+                               this.viewState.lineBlockAt(scrollAnchorPos).top;
+                           let diff = newAnchorHeight - scrollAnchorHeight;
                            if (diff > 1 || diff < -1) {
-                               this.scrollDOM.scrollTop += diff;
+                               sDOM.scrollTop = scrollTop + diff;
                                scrolled = true;
                            }
                        }
@@ -10747,10 +11082,11 @@
                    if (this.viewport.from == oldViewport.from && this.viewport.to == oldViewport.to &&
                        !scrolled && this.measureRequests.length == 0)
                        break;
+                   scrollAnchorHeight = -1;
                }
            }
            finally {
-               this.updateState = 0 /* UpdateState.Idle */;
+               this.updateState = 0 /* Idle */;
                this.measureScheduled = -1;
            }
            if (updated && !updated.empty)
@@ -10809,9 +11145,9 @@
            StyleModule.mount(this.root, this.styleModules.concat(baseTheme$1$3).reverse());
        }
        readMeasured() {
-           if (this.updateState == 2 /* UpdateState.Updating */)
+           if (this.updateState == 2 /* Updating */)
                throw new Error("Reading the editor layout isn't allowed during an update");
-           if (this.updateState == 0 /* UpdateState.Idle */ && this.measureScheduled > -1)
+           if (this.updateState == 0 /* Idle */ && this.measureScheduled > -1)
                this.measure(false);
        }
        /**
@@ -10826,6 +11162,8 @@
            if (this.measureScheduled < 0)
                this.measureScheduled = this.win.requestAnimationFrame(() => this.measure());
            if (request) {
+               if (this.measureRequests.indexOf(request) > -1)
+                   return;
                if (request.key != null)
                    for (let i = 0; i < this.measureRequests.length; i++) {
                        if (this.measureRequests[i].key === request.key) {
@@ -11106,7 +11444,7 @@
            this.dom.remove();
            this.observer.destroy();
            if (this.measureScheduled > -1)
-               cancelAnimationFrame(this.measureScheduled);
+               this.win.cancelAnimationFrame(this.measureScheduled);
            this.destroyed = true;
        }
        /**
@@ -11194,6 +11532,11 @@
    called and the default behavior is prevented.
    */
    EditorView.inputHandler = inputHandler$1;
+   /**
+   This facet can be used to provide functions that create effects
+   to be dispatched when the editor's focus state changes.
+   */
+   EditorView.focusChangeEffect = focusChangeEffect;
    /**
    By default, the editor assumes all its content has the same
    [text direction](https://codemirror.net/6/docs/ref/#view.Direction). Configure this with a `true`
@@ -11509,6 +11852,8 @@
            if (runFor(scopeObj[prefix + modifiers(name, event, !isChar)]))
                return true;
            if (isChar && (event.altKey || event.metaKey || event.ctrlKey) &&
+               // Ctrl-Alt may be used for AltGr on Windows
+               !(browser.windows && event.ctrlKey && event.altKey) &&
                (baseName = base[event.keyCode]) && baseName != name) {
                if (runFor(scopeObj[prefix + modifiers(baseName, event, true)]))
                    return true;
@@ -11596,33 +11941,23 @@
            to: Math.min(inside.to, view.moveToLineBoundary(range, true, true).from),
            type: BlockType.Text };
    }
-   function blockAt(view, pos) {
-       let line = view.lineBlockAt(pos);
-       if (Array.isArray(line.type))
-           for (let l of line.type) {
-               if (l.to > pos || l.to == pos && (l.to == line.to || l.type == BlockType.Text))
-                   return l;
-           }
-       return line;
-   }
    function rectanglesForRange(view, className, range) {
        if (range.to <= view.viewport.from || range.from >= view.viewport.to)
            return [];
        let from = Math.max(range.from, view.viewport.from), to = Math.min(range.to, view.viewport.to);
        let ltr = view.textDirection == Direction.LTR;
        let content = view.contentDOM, contentRect = content.getBoundingClientRect(), base = getBase(view);
-       let lineStyle = window.getComputedStyle(content.firstChild);
-       let leftSide = contentRect.left + parseInt(lineStyle.paddingLeft) + Math.min(0, parseInt(lineStyle.textIndent));
-       let rightSide = contentRect.right - parseInt(lineStyle.paddingRight);
+       let lineElt = content.querySelector(".cm-line"), lineStyle = lineElt && window.getComputedStyle(lineElt);
+       let leftSide = contentRect.left +
+           (lineStyle ? parseInt(lineStyle.paddingLeft) + Math.min(0, parseInt(lineStyle.textIndent)) : 0);
+       let rightSide = contentRect.right - (lineStyle ? parseInt(lineStyle.paddingRight) : 0);
        let startBlock = blockAt(view, from), endBlock = blockAt(view, to);
        let visualStart = startBlock.type == BlockType.Text ? startBlock : null;
        let visualEnd = endBlock.type == BlockType.Text ? endBlock : null;
-       if (view.lineWrapping) {
-           if (visualStart)
-               visualStart = wrappedLine(view, from, visualStart);
-           if (visualEnd)
-               visualEnd = wrappedLine(view, to, visualEnd);
-       }
+       if (visualStart && (view.lineWrapping || startBlock.widgetLineBreaks))
+           visualStart = wrappedLine(view, from, visualStart);
+       if (visualEnd && (view.lineWrapping || endBlock.widgetLineBreaks))
+           visualEnd = wrappedLine(view, to, visualEnd);
        if (visualStart && visualEnd && visualStart.from == visualEnd.from) {
            return pieces(drawForLine(range.from, range.to, visualStart));
        }
@@ -11630,14 +11965,15 @@
            let top = visualStart ? drawForLine(range.from, null, visualStart) : drawForWidget(startBlock, false);
            let bottom = visualEnd ? drawForLine(null, range.to, visualEnd) : drawForWidget(endBlock, true);
            let between = [];
-           if ((visualStart || startBlock).to < (visualEnd || endBlock).from - 1)
+           if ((visualStart || startBlock).to < (visualEnd || endBlock).from - (visualStart && visualEnd ? 1 : 0) ||
+               startBlock.widgetLineBreaks > 1 && top.bottom + view.defaultLineHeight / 2 < bottom.top)
                between.push(piece(leftSide, top.bottom, rightSide, bottom.top));
            else if (top.bottom < bottom.top && view.elementAtHeight((top.bottom + bottom.top) / 2).type == BlockType.Text)
                top.bottom = bottom.top = (top.bottom + bottom.top) / 2;
            return pieces(top).concat(between).concat(pieces(bottom));
        }
        function piece(left, top, right, bottom) {
-           return new RectangleMarker(className, left - base.left, top - base.top - 0.01 /* C.Epsilon */, right - left, bottom - top + 0.01 /* C.Epsilon */);
+           return new RectangleMarker(className, left - base.left, top - base.top - 0.01 /* Epsilon */, right - left, bottom - top + 0.01 /* Epsilon */);
        }
        function pieces({ top, bottom, horizontal }) {
            let pieces = [];
@@ -11655,6 +11991,8 @@
                // coordsAtPos queries, would break selection drawing.
                let fromCoords = view.coordsAtPos(from, (from == line.to ? -2 : 2));
                let toCoords = view.coordsAtPos(to, (to == line.from ? 2 : -2));
+               if (!fromCoords || !toCoords)
+                   return;
                top = Math.min(fromCoords.top, toCoords.top, top);
                bottom = Math.max(fromCoords.bottom, toCoords.bottom, bottom);
                if (dir == Direction.LTR)
@@ -11803,7 +12141,7 @@
        ];
    }
    function configChanged(update) {
-       return update.startState.facet(selectionConfig) != update.startState.facet(selectionConfig);
+       return update.startState.facet(selectionConfig) != update.state.facet(selectionConfig);
    }
    const cursorLayer = /*@__PURE__*/layer({
        above: true,
@@ -11822,7 +12160,7 @@
            return cursors;
        },
        update(update, dom) {
-           if (update.transactions.some(tr => tr.scrollIntoView))
+           if (update.transactions.some(tr => tr.selection))
                dom.style.animationName = dom.style.animationName == "cm-blink" ? "cm-blink2" : "cm-blink";
            let confChange = configChanged(update);
            if (confChange)
@@ -12334,10 +12672,10 @@
        return EditorView.mouseSelectionStyle.of((view, event) => filter(event) ? rectangleSelectionStyle(view, event) : null);
    }
    const keys = {
-       Alt: [18, e => e.altKey],
-       Control: [17, e => e.ctrlKey],
-       Shift: [16, e => e.shiftKey],
-       Meta: [91, e => e.metaKey]
+       Alt: [18, e => !!e.altKey],
+       Control: [17, e => !!e.ctrlKey],
+       Shift: [16, e => !!e.shiftKey],
+       Meta: [91, e => !!e.metaKey]
    };
    const showCrosshair = { style: "cursor: crosshair" };
    /**
@@ -12443,6 +12781,7 @@
            });
        }
    });
+   const knownHeight = /*@__PURE__*/new WeakMap();
    const tooltipPlugin = /*@__PURE__*/ViewPlugin.fromClass(class {
        constructor(view) {
            this.view = view;
@@ -12558,6 +12897,7 @@
            };
        }
        writeMeasure(measured) {
+           var _a;
            let { editor, space } = measured;
            let others = [];
            for (let i = 0; i < this.manager.tooltips.length; i++) {
@@ -12572,12 +12912,12 @@
                    continue;
                }
                let arrow = tooltip.arrow ? tView.dom.querySelector(".cm-tooltip-arrow") : null;
-               let arrowHeight = arrow ? 7 /* Arrow.Size */ : 0;
-               let width = size.right - size.left, height = size.bottom - size.top;
+               let arrowHeight = arrow ? 7 /* Size */ : 0;
+               let width = size.right - size.left, height = (_a = knownHeight.get(tView)) !== null && _a !== void 0 ? _a : size.bottom - size.top;
                let offset = tView.offset || noOffset, ltr = this.view.textDirection == Direction.LTR;
                let left = size.width > space.right - space.left ? (ltr ? space.left : space.right - size.width)
-                   : ltr ? Math.min(pos.left - (arrow ? 14 /* Arrow.Offset */ : 0) + offset.x, space.right - width)
-                       : Math.max(space.left, pos.left - width + (arrow ? 14 /* Arrow.Offset */ : 0) - offset.x);
+                   : ltr ? Math.min(pos.left - (arrow ? 14 /* Offset */ : 0) + offset.x, space.right - width)
+                       : Math.max(space.left, pos.left - width + (arrow ? 14 /* Offset */ : 0) - offset.x);
                let above = !!tooltip.above;
                if (!tooltip.strictSide && (above
                    ? pos.top - (size.bottom - size.top) - offset.y < space.top
@@ -12590,6 +12930,7 @@
                        dom.style.top = Outside;
                        continue;
                    }
+                   knownHeight.set(tView, height);
                    dom.style.height = (height = spaceVert) + "px";
                }
                else if (dom.style.height) {
@@ -12610,7 +12951,7 @@
                    dom.style.left = left + "px";
                }
                if (arrow)
-                   arrow.style.left = `${pos.left + (ltr ? offset.x : -offset.x) - (left + 14 /* Arrow.Offset */ - 7 /* Arrow.Size */)}px`;
+                   arrow.style.left = `${pos.left + (ltr ? offset.x : -offset.x) - (left + 14 /* Offset */ - 7 /* Size */)}px`;
                if (tView.overlap !== true)
                    others.push({ left, top, right, bottom: top + height });
                dom.classList.toggle("cm-tooltip-above", above);
@@ -12653,8 +12994,8 @@
            color: "white"
        },
        ".cm-tooltip-arrow": {
-           height: `${7 /* Arrow.Size */}px`,
-           width: `${7 /* Arrow.Size */ * 2}px`,
+           height: `${7 /* Size */}px`,
+           width: `${7 /* Size */ * 2}px`,
            position: "absolute",
            zIndex: -1,
            overflow: "hidden",
@@ -12663,26 +13004,26 @@
                position: "absolute",
                width: 0,
                height: 0,
-               borderLeft: `${7 /* Arrow.Size */}px solid transparent`,
-               borderRight: `${7 /* Arrow.Size */}px solid transparent`,
+               borderLeft: `${7 /* Size */}px solid transparent`,
+               borderRight: `${7 /* Size */}px solid transparent`,
            },
            ".cm-tooltip-above &": {
-               bottom: `-${7 /* Arrow.Size */}px`,
+               bottom: `-${7 /* Size */}px`,
                "&:before": {
-                   borderTop: `${7 /* Arrow.Size */}px solid #bbb`,
+                   borderTop: `${7 /* Size */}px solid #bbb`,
                },
                "&:after": {
-                   borderTop: `${7 /* Arrow.Size */}px solid #f5f5f5`,
+                   borderTop: `${7 /* Size */}px solid #f5f5f5`,
                    bottom: "1px"
                }
            },
            ".cm-tooltip-below &": {
-               top: `-${7 /* Arrow.Size */}px`,
+               top: `-${7 /* Size */}px`,
                "&:before": {
-                   borderBottom: `${7 /* Arrow.Size */}px solid #bbb`,
+                   borderBottom: `${7 /* Size */}px solid #bbb`,
                },
                "&:after": {
-                   borderBottom: `${7 /* Arrow.Size */}px solid #f5f5f5`,
+                   borderBottom: `${7 /* Size */}px solid #f5f5f5`,
                    top: "1px"
                }
            },
@@ -12741,6 +13082,11 @@
        }
        update(update) {
            this.manager.update(update);
+       }
+       destroy() {
+           var _a;
+           for (let t of this.manager.tooltipViews)
+               (_a = t.destroy) === null || _a === void 0 ? void 0 : _a.call(t);
        }
    }
    const showHoverTooltipHost = /*@__PURE__*/showTooltip.compute([showHoverTooltip], state => {
@@ -12827,7 +13173,7 @@
            if (tooltip && !isInTooltip(this.lastMove.target) || this.pending) {
                let { pos } = tooltip || this.pending, end = (_a = tooltip === null || tooltip === void 0 ? void 0 : tooltip.end) !== null && _a !== void 0 ? _a : pos;
                if ((pos == end ? this.view.posAtCoords(this.lastMove) != pos
-                   : !isOverRange(this.view, pos, end, event.clientX, event.clientY, 6 /* Hover.MaxDist */))) {
+                   : !isOverRange(this.view, pos, end, event.clientX, event.clientY, 6 /* MaxDist */))) {
                    this.view.dispatch({ effects: this.setHover.of(null) });
                    this.pending = null;
                }
@@ -12909,7 +13255,7 @@
        });
        return [
            hoverState,
-           ViewPlugin.define(view => new HoverPlugin(view, source, hoverState, setHover, options.hoverTime || 300 /* Hover.Time */)),
+           ViewPlugin.define(view => new HoverPlugin(view, source, hoverState, setHover, options.hoverTime || 300 /* Time */)),
            showHoverTooltipHost
        ];
    }
@@ -13135,6 +13481,7 @@
        elementStyle: "",
        markers: () => RangeSet.empty,
        lineMarker: () => null,
+       widgetMarker: () => null,
        lineMarkerChange: null,
        initialSpacer: null,
        updateSpacer: null,
@@ -13215,24 +13562,28 @@
            let classSet = [];
            let contexts = this.gutters.map(gutter => new UpdateContext(gutter, this.view.viewport, -this.view.documentPadding.top));
            for (let line of this.view.viewportLineBlocks) {
-               let text;
-               if (Array.isArray(line.type)) {
-                   for (let b of line.type)
-                       if (b.type == BlockType.Text) {
-                           text = b;
-                           break;
-                       }
-               }
-               else {
-                   text = line.type == BlockType.Text ? line : undefined;
-               }
-               if (!text)
-                   continue;
                if (classSet.length)
                    classSet = [];
-               advanceCursor(lineClasses, classSet, line.from);
-               for (let cx of contexts)
-                   cx.line(this.view, text, classSet);
+               if (Array.isArray(line.type)) {
+                   let first = true;
+                   for (let b of line.type) {
+                       if (b.type == BlockType.Text && first) {
+                           advanceCursor(lineClasses, classSet, b.from);
+                           for (let cx of contexts)
+                               cx.line(this.view, b, classSet);
+                           first = false;
+                       }
+                       else if (b.widget) {
+                           for (let cx of contexts)
+                               cx.widget(this.view, b);
+                       }
+                   }
+               }
+               else if (line.type == BlockType.Text) {
+                   advanceCursor(lineClasses, classSet, line.from);
+                   for (let cx of contexts)
+                       cx.line(this.view, line, classSet);
+               }
            }
            for (let cx of contexts)
                cx.finish();
@@ -13297,32 +13648,39 @@
        constructor(gutter, viewport, height) {
            this.gutter = gutter;
            this.height = height;
-           this.localMarkers = [];
            this.i = 0;
            this.cursor = RangeSet.iter(gutter.markers, viewport.from);
        }
+       addElement(view, block, markers) {
+           let { gutter } = this, above = block.top - this.height;
+           if (this.i == gutter.elements.length) {
+               let newElt = new GutterElement(view, block.height, above, markers);
+               gutter.elements.push(newElt);
+               gutter.dom.appendChild(newElt.dom);
+           }
+           else {
+               gutter.elements[this.i].update(view, block.height, above, markers);
+           }
+           this.height = block.bottom;
+           this.i++;
+       }
        line(view, line, extraMarkers) {
-           if (this.localMarkers.length)
-               this.localMarkers = [];
-           advanceCursor(this.cursor, this.localMarkers, line.from);
-           let localMarkers = extraMarkers.length ? this.localMarkers.concat(extraMarkers) : this.localMarkers;
+           let localMarkers = [];
+           advanceCursor(this.cursor, localMarkers, line.from);
+           if (extraMarkers.length)
+               localMarkers = localMarkers.concat(extraMarkers);
            let forLine = this.gutter.config.lineMarker(view, line, localMarkers);
            if (forLine)
                localMarkers.unshift(forLine);
            let gutter = this.gutter;
            if (localMarkers.length == 0 && !gutter.config.renderEmptyElements)
                return;
-           let above = line.top - this.height;
-           if (this.i == gutter.elements.length) {
-               let newElt = new GutterElement(view, line.height, above, localMarkers);
-               gutter.elements.push(newElt);
-               gutter.dom.appendChild(newElt.dom);
-           }
-           else {
-               gutter.elements[this.i].update(view, line.height, above, localMarkers);
-           }
-           this.height = line.bottom;
-           this.i++;
+           this.addElement(view, line, localMarkers);
+       }
+       widget(view, block) {
+           let marker = this.gutter.config.widgetMarker(view, block.widget, block);
+           if (marker)
+               this.addElement(view, block, [marker]);
        }
        finish() {
            let gutter = this.gutter;
@@ -13343,7 +13701,17 @@
            this.dom.className = "cm-gutter" + (this.config.class ? " " + this.config.class : "");
            for (let prop in config.domEventHandlers) {
                this.dom.addEventListener(prop, (event) => {
-                   let line = view.lineBlockAtHeight(event.clientY - view.documentTop);
+                   let target = event.target, y;
+                   if (target != this.dom && this.dom.contains(target)) {
+                       while (target.parentNode != this.dom)
+                           target = target.parentNode;
+                       let rect = target.getBoundingClientRect();
+                       y = (rect.top + rect.bottom) / 2;
+                   }
+                   else {
+                       y = event.clientY;
+                   }
+                   let line = view.lineBlockAtHeight(y - view.documentTop);
                    if (config.domEventHandlers[prop](view, line, event))
                        event.preventDefault();
                });
@@ -13480,6 +13848,7 @@
                return null;
            return new NumberMarker(formatNumber(view, view.state.doc.lineAt(line.from).number));
        },
+       widgetMarker: () => null,
        lineMarkerChange: update => update.startState.facet(lineNumberConfig) != update.state.facet(lineNumberConfig),
        initialSpacer(view) {
            return new NumberMarker(formatNumber(view, maxLineNumber(view.state.doc.lines)));
@@ -13855,15 +14224,16 @@
        /// not have its children iterated over (or `leave` called).
        iterate(spec) {
            let { enter, leave, from = 0, to = this.length } = spec;
-           for (let c = this.cursor((spec.mode || 0) | IterMode.IncludeAnonymous);;) {
+           let mode = spec.mode || 0, anon = (mode & IterMode.IncludeAnonymous) > 0;
+           for (let c = this.cursor(mode | IterMode.IncludeAnonymous);;) {
                let entered = false;
-               if (c.from <= to && c.to >= from && (c.type.isAnonymous || enter(c) !== false)) {
+               if (c.from <= to && c.to >= from && (!anon && c.type.isAnonymous || enter(c) !== false)) {
                    if (c.firstChild())
                        continue;
                    entered = true;
                }
                for (;;) {
-                   if (entered && leave && !c.type.isAnonymous)
+                   if (entered && leave && (anon || !c.type.isAnonymous))
                        leave(c);
                    if (c.nextSibling())
                        break;
@@ -14937,45 +15307,59 @@
    new NodeProp({ perNode: true });
 
    let nextTagID = 0;
-   /// Highlighting tags are markers that denote a highlighting category.
-   /// They are [associated](#highlight.styleTags) with parts of a syntax
-   /// tree by a language mode, and then mapped to an actual CSS style by
-   /// a [highlighter](#highlight.Highlighter).
-   ///
-   /// Because syntax tree node types and highlight styles have to be
-   /// able to talk the same language, CodeMirror uses a mostly _closed_
-   /// [vocabulary](#highlight.tags) of syntax tags (as opposed to
-   /// traditional open string-based systems, which make it hard for
-   /// highlighting themes to cover all the tokens produced by the
-   /// various languages).
-   ///
-   /// It _is_ possible to [define](#highlight.Tag^define) your own
-   /// highlighting tags for system-internal use (where you control both
-   /// the language package and the highlighter), but such tags will not
-   /// be picked up by regular highlighters (though you can derive them
-   /// from standard tags to allow highlighters to fall back to those).
+   /**
+   Highlighting tags are markers that denote a highlighting category.
+   They are [associated](#highlight.styleTags) with parts of a syntax
+   tree by a language mode, and then mapped to an actual CSS style by
+   a [highlighter](#highlight.Highlighter).
+
+   Because syntax tree node types and highlight styles have to be
+   able to talk the same language, CodeMirror uses a mostly _closed_
+   [vocabulary](#highlight.tags) of syntax tags (as opposed to
+   traditional open string-based systems, which make it hard for
+   highlighting themes to cover all the tokens produced by the
+   various languages).
+
+   It _is_ possible to [define](#highlight.Tag^define) your own
+   highlighting tags for system-internal use (where you control both
+   the language package and the highlighter), but such tags will not
+   be picked up by regular highlighters (though you can derive them
+   from standard tags to allow highlighters to fall back to those).
+   */
    class Tag {
-       /// @internal
+       /**
+       @internal
+       */
        constructor(
-       /// The set of this tag and all its parent tags, starting with
-       /// this one itself and sorted in order of decreasing specificity.
+       /**
+       The set of this tag and all its parent tags, starting with
+       this one itself and sorted in order of decreasing specificity.
+       */
        set, 
-       /// The base unmodified tag that this one is based on, if it's
-       /// modified @internal
+       /**
+       The base unmodified tag that this one is based on, if it's
+       modified @internal
+       */
        base, 
-       /// The modifiers applied to this.base @internal
+       /**
+       The modifiers applied to this.base @internal
+       */
        modified) {
            this.set = set;
            this.base = base;
            this.modified = modified;
-           /// @internal
+           /**
+           @internal
+           */
            this.id = nextTagID++;
        }
-       /// Define a new tag. If `parent` is given, the tag is treated as a
-       /// sub-tag of that parent, and
-       /// [highlighters](#highlight.tagHighlighter) that don't mention
-       /// this tag will try to fall back to the parent tag (or grandparent
-       /// tag, etc).
+       /**
+       Define a new tag. If `parent` is given, the tag is treated as a
+       sub-tag of that parent, and
+       [highlighters](#highlight.tagHighlighter) that don't mention
+       this tag will try to fall back to the parent tag (or grandparent
+       tag, etc).
+       */
        static define(parent) {
            if (parent === null || parent === void 0 ? void 0 : parent.base)
                throw new Error("Can not derive from a modified tag");
@@ -14986,16 +15370,18 @@
                    tag.set.push(t);
            return tag;
        }
-       /// Define a tag _modifier_, which is a function that, given a tag,
-       /// will return a tag that is a subtag of the original. Applying the
-       /// same modifier to a twice tag will return the same value (`m1(t1)
-       /// == m1(t1)`) and applying multiple modifiers will, regardless or
-       /// order, produce the same tag (`m1(m2(t1)) == m2(m1(t1))`).
-       ///
-       /// When multiple modifiers are applied to a given base tag, each
-       /// smaller set of modifiers is registered as a parent, so that for
-       /// example `m1(m2(m3(t1)))` is a subtype of `m1(m2(t1))`,
-       /// `m1(m3(t1)`, and so on.
+       /**
+       Define a tag _modifier_, which is a function that, given a tag,
+       will return a tag that is a subtag of the original. Applying the
+       same modifier to a twice tag will return the same value (`m1(t1)
+       == m1(t1)`) and applying multiple modifiers will, regardless or
+       order, produce the same tag (`m1(m2(t1)) == m2(m1(t1))`).
+       
+       When multiple modifiers are applied to a given base tag, each
+       smaller set of modifiers is registered as a parent, so that for
+       example `m1(m2(m3(t1)))` is a subtype of `m1(m2(t1))`,
+       `m1(m3(t1)`, and so on.
+       */
        static defineModifier() {
            let mod = new Modifier;
            return (tag) => {
@@ -15040,55 +15426,57 @@
        }
        return sets.sort((a, b) => b.length - a.length);
    }
-   /// This function is used to add a set of tags to a language syntax
-   /// via [`NodeSet.extend`](#common.NodeSet.extend) or
-   /// [`LRParser.configure`](#lr.LRParser.configure).
-   ///
-   /// The argument object maps node selectors to [highlighting
-   /// tags](#highlight.Tag) or arrays of tags.
-   ///
-   /// Node selectors may hold one or more (space-separated) node paths.
-   /// Such a path can be a [node name](#common.NodeType.name), or
-   /// multiple node names (or `*` wildcards) separated by slash
-   /// characters, as in `"Block/Declaration/VariableName"`. Such a path
-   /// matches the final node but only if its direct parent nodes are the
-   /// other nodes mentioned. A `*` in such a path matches any parent,
-   /// but only a single level—wildcards that match multiple parents
-   /// aren't supported, both for efficiency reasons and because Lezer
-   /// trees make it rather hard to reason about what they would match.)
-   ///
-   /// A path can be ended with `/...` to indicate that the tag assigned
-   /// to the node should also apply to all child nodes, even if they
-   /// match their own style (by default, only the innermost style is
-   /// used).
-   ///
-   /// When a path ends in `!`, as in `Attribute!`, no further matching
-   /// happens for the node's child nodes, and the entire node gets the
-   /// given style.
-   ///
-   /// In this notation, node names that contain `/`, `!`, `*`, or `...`
-   /// must be quoted as JSON strings.
-   ///
-   /// For example:
-   ///
-   /// ```javascript
-   /// parser.withProps(
-   ///   styleTags({
-   ///     // Style Number and BigNumber nodes
-   ///     "Number BigNumber": tags.number,
-   ///     // Style Escape nodes whose parent is String
-   ///     "String/Escape": tags.escape,
-   ///     // Style anything inside Attributes nodes
-   ///     "Attributes!": tags.meta,
-   ///     // Add a style to all content inside Italic nodes
-   ///     "Italic/...": tags.emphasis,
-   ///     // Style InvalidString nodes as both `string` and `invalid`
-   ///     "InvalidString": [tags.string, tags.invalid],
-   ///     // Style the node named "/" as punctuation
-   ///     '"/"': tags.punctuation
-   ///   })
-   /// )
-   /// ```
+   /**
+   This function is used to add a set of tags to a language syntax
+   via [`NodeSet.extend`](#common.NodeSet.extend) or
+   [`LRParser.configure`](#lr.LRParser.configure).
+
+   The argument object maps node selectors to [highlighting
+   tags](#highlight.Tag) or arrays of tags.
+
+   Node selectors may hold one or more (space-separated) node paths.
+   Such a path can be a [node name](#common.NodeType.name), or
+   multiple node names (or `*` wildcards) separated by slash
+   characters, as in `"Block/Declaration/VariableName"`. Such a path
+   matches the final node but only if its direct parent nodes are the
+   other nodes mentioned. A `*` in such a path matches any parent,
+   but only a single level—wildcards that match multiple parents
+   aren't supported, both for efficiency reasons and because Lezer
+   trees make it rather hard to reason about what they would match.)
+
+   A path can be ended with `/...` to indicate that the tag assigned
+   to the node should also apply to all child nodes, even if they
+   match their own style (by default, only the innermost style is
+   used).
+
+   When a path ends in `!`, as in `Attribute!`, no further matching
+   happens for the node's child nodes, and the entire node gets the
+   given style.
+
+   In this notation, node names that contain `/`, `!`, `*`, or `...`
+   must be quoted as JSON strings.
+
+   For example:
+
+   ```javascript
+   parser.withProps(
+     styleTags({
+       // Style Number and BigNumber nodes
+       "Number BigNumber": tags.number,
+       // Style Escape nodes whose parent is String
+       "String/Escape": tags.escape,
+       // Style anything inside Attributes nodes
+       "Attributes!": tags.meta,
+       // Add a style to all content inside Italic nodes
+       "Italic/...": tags.emphasis,
+       // Style InvalidString nodes as both `string` and `invalid`
+       "InvalidString": [tags.string, tags.invalid],
+       // Style the node named "/" as punctuation
+       '"/"': tags.punctuation
+     })
+   )
+   ```
+   */
    function styleTags(spec) {
        let byName = Object.create(null);
        for (let prop in spec) {
@@ -15097,10 +15485,10 @@
                tags = [tags];
            for (let part of prop.split(" "))
                if (part) {
-                   let pieces = [], mode = 2 /* Mode.Normal */, rest = part;
+                   let pieces = [], mode = 2 /* Normal */, rest = part;
                    for (let pos = 0;;) {
                        if (rest == "..." && pos > 0 && pos + 3 == part.length) {
-                           mode = 1 /* Mode.Inherit */;
+                           mode = 1 /* Inherit */;
                            break;
                        }
                        let m = /^"(?:[^"\\]|\\.)*?"|[^\/!]+/.exec(rest);
@@ -15112,7 +15500,7 @@
                            break;
                        let next = part[pos++];
                        if (pos == part.length && next == "!") {
-                           mode = 0 /* Mode.Opaque */;
+                           mode = 0 /* Opaque */;
                            break;
                        }
                        if (next != "/")
@@ -15136,8 +15524,8 @@
            this.context = context;
            this.next = next;
        }
-       get opaque() { return this.mode == 0 /* Mode.Opaque */; }
-       get inherit() { return this.mode == 1 /* Mode.Inherit */; }
+       get opaque() { return this.mode == 0 /* Opaque */; }
+       get inherit() { return this.mode == 1 /* Inherit */; }
        sort(other) {
            if (!other || other.depth < this.depth) {
                this.next = other;
@@ -15148,10 +15536,12 @@
        }
        get depth() { return this.context ? this.context.length : 0; }
    }
-   Rule.empty = new Rule([], 2 /* Mode.Normal */, null);
-   /// Define a [highlighter](#highlight.Highlighter) from an array of
-   /// tag/class pairs. Classes associated with more specific tags will
-   /// take precedence.
+   Rule.empty = new Rule([], 2 /* Normal */, null);
+   /**
+   Define a [highlighter](#highlight.Highlighter) from an array of
+   tag/class pairs. Classes associated with more specific tags will
+   take precedence.
+   */
    function tagHighlighter(tags, options) {
        let map = Object.create(null);
        for (let style of tags) {
@@ -15188,16 +15578,24 @@
        }
        return result;
    }
-   /// Highlight the given [tree](#common.Tree) with the given
-   /// [highlighter](#highlight.Highlighter).
+   /**
+   Highlight the given [tree](#common.Tree) with the given
+   [highlighter](#highlight.Highlighter).
+   */
    function highlightTree(tree, highlighter, 
-   /// Assign styling to a region of the text. Will be called, in order
-   /// of position, for any ranges where more than zero classes apply.
-   /// `classes` is a space separated string of CSS classes.
+   /**
+   Assign styling to a region of the text. Will be called, in order
+   of position, for any ranges where more than zero classes apply.
+   `classes` is a space separated string of CSS classes.
+   */
    putStyle, 
-   /// The start of the range to highlight.
+   /**
+   The start of the range to highlight.
+   */
    from = 0, 
-   /// The end of the range.
+   /**
+   The end of the range.
+   */
    to = tree.length) {
        let builder = new HighlightBuilder(from, Array.isArray(highlighter) ? highlighter : [highlighter], putStyle);
        builder.highlightRange(tree.cursor(), from, to, "", builder.highlighters);
@@ -15235,10 +15633,10 @@
                if (cls)
                    cls += " ";
                cls += tagCls;
-               if (rule.mode == 1 /* Mode.Inherit */)
+               if (rule.mode == 1 /* Inherit */)
                    inheritedClass += (inheritedClass ? " " : "") + tagCls;
            }
-           this.startSpan(cursor.from, cls);
+           this.startSpan(Math.max(from, start), cls);
            if (rule.opaque)
                return;
            let mounted = cursor.tree && cursor.tree.prop(NodeProp.mounted);
@@ -15262,14 +15660,16 @@
                        break;
                    pos = next.to + start;
                    if (pos > from) {
-                       this.highlightRange(inner.cursor(), Math.max(from, next.from + start), Math.min(to, pos), inheritedClass, innerHighlighters);
-                       this.startSpan(pos, cls);
+                       this.highlightRange(inner.cursor(), Math.max(from, next.from + start), Math.min(to, pos), "", innerHighlighters);
+                       this.startSpan(Math.min(to, pos), cls);
                    }
                }
                if (hasChild)
                    cursor.parent();
            }
            else if (cursor.firstChild()) {
+               if (mounted)
+                   inheritedClass = "";
                do {
                    if (cursor.to <= from)
                        continue;
@@ -15282,9 +15682,11 @@
            }
        }
    }
-   /// Match a syntax node's [highlight rules](#highlight.styleTags). If
-   /// there's a match, return its set of tags, and whether it is
-   /// opaque (uses a `!`) or applies to all child nodes (`/...`).
+   /**
+   Match a syntax node's [highlight rules](#highlight.styleTags). If
+   there's a match, return its set of tags, and whether it is
+   opaque (uses a `!`) or applies to all child nodes (`/...`).
+   */
    function getStyleTags(node) {
        let rule = node.type.prop(ruleNodeProp);
        while (rule && rule.context && !node.matchContext(rule.context))
@@ -15293,268 +15695,440 @@
    }
    const t = Tag.define;
    const comment = t(), name = t(), typeName = t(name), propertyName = t(name), literal = t(), string = t(literal), number = t(literal), content = t(), heading = t(content), keyword = t(), operator = t(), punctuation = t(), bracket = t(punctuation), meta = t();
-   /// The default set of highlighting [tags](#highlight.Tag).
-   ///
-   /// This collection is heavily biased towards programming languages,
-   /// and necessarily incomplete. A full ontology of syntactic
-   /// constructs would fill a stack of books, and be impractical to
-   /// write themes for. So try to make do with this set. If all else
-   /// fails, [open an
-   /// issue](https://github.com/codemirror/codemirror.next) to propose a
-   /// new tag, or [define](#highlight.Tag^define) a local custom tag for
-   /// your use case.
-   ///
-   /// Note that it is not obligatory to always attach the most specific
-   /// tag possible to an element—if your grammar can't easily
-   /// distinguish a certain type of element (such as a local variable),
-   /// it is okay to style it as its more general variant (a variable).
-   /// 
-   /// For tags that extend some parent tag, the documentation links to
-   /// the parent.
+   /**
+   The default set of highlighting [tags](#highlight.Tag).
+
+   This collection is heavily biased towards programming languages,
+   and necessarily incomplete. A full ontology of syntactic
+   constructs would fill a stack of books, and be impractical to
+   write themes for. So try to make do with this set. If all else
+   fails, [open an
+   issue](https://github.com/codemirror/codemirror.next) to propose a
+   new tag, or [define](#highlight.Tag^define) a local custom tag for
+   your use case.
+
+   Note that it is not obligatory to always attach the most specific
+   tag possible to an element—if your grammar can't easily
+   distinguish a certain type of element (such as a local variable),
+   it is okay to style it as its more general variant (a variable).
+
+   For tags that extend some parent tag, the documentation links to
+   the parent.
+   */
    const tags = {
-       /// A comment.
+       /**
+       A comment.
+       */
        comment,
-       /// A line [comment](#highlight.tags.comment).
+       /**
+       A line [comment](#highlight.tags.comment).
+       */
        lineComment: t(comment),
-       /// A block [comment](#highlight.tags.comment).
+       /**
+       A block [comment](#highlight.tags.comment).
+       */
        blockComment: t(comment),
-       /// A documentation [comment](#highlight.tags.comment).
+       /**
+       A documentation [comment](#highlight.tags.comment).
+       */
        docComment: t(comment),
-       /// Any kind of identifier.
+       /**
+       Any kind of identifier.
+       */
        name,
-       /// The [name](#highlight.tags.name) of a variable.
+       /**
+       The [name](#highlight.tags.name) of a variable.
+       */
        variableName: t(name),
-       /// A type [name](#highlight.tags.name).
+       /**
+       A type [name](#highlight.tags.name).
+       */
        typeName: typeName,
-       /// A tag name (subtag of [`typeName`](#highlight.tags.typeName)).
+       /**
+       A tag name (subtag of [`typeName`](#highlight.tags.typeName)).
+       */
        tagName: t(typeName),
-       /// A property or field [name](#highlight.tags.name).
+       /**
+       A property or field [name](#highlight.tags.name).
+       */
        propertyName: propertyName,
-       /// An attribute name (subtag of [`propertyName`](#highlight.tags.propertyName)).
+       /**
+       An attribute name (subtag of [`propertyName`](#highlight.tags.propertyName)).
+       */
        attributeName: t(propertyName),
-       /// The [name](#highlight.tags.name) of a class.
+       /**
+       The [name](#highlight.tags.name) of a class.
+       */
        className: t(name),
-       /// A label [name](#highlight.tags.name).
+       /**
+       A label [name](#highlight.tags.name).
+       */
        labelName: t(name),
-       /// A namespace [name](#highlight.tags.name).
+       /**
+       A namespace [name](#highlight.tags.name).
+       */
        namespace: t(name),
-       /// The [name](#highlight.tags.name) of a macro.
+       /**
+       The [name](#highlight.tags.name) of a macro.
+       */
        macroName: t(name),
-       /// A literal value.
+       /**
+       A literal value.
+       */
        literal,
-       /// A string [literal](#highlight.tags.literal).
+       /**
+       A string [literal](#highlight.tags.literal).
+       */
        string,
-       /// A documentation [string](#highlight.tags.string).
+       /**
+       A documentation [string](#highlight.tags.string).
+       */
        docString: t(string),
-       /// A character literal (subtag of [string](#highlight.tags.string)).
+       /**
+       A character literal (subtag of [string](#highlight.tags.string)).
+       */
        character: t(string),
-       /// An attribute value (subtag of [string](#highlight.tags.string)).
+       /**
+       An attribute value (subtag of [string](#highlight.tags.string)).
+       */
        attributeValue: t(string),
-       /// A number [literal](#highlight.tags.literal).
+       /**
+       A number [literal](#highlight.tags.literal).
+       */
        number,
-       /// An integer [number](#highlight.tags.number) literal.
+       /**
+       An integer [number](#highlight.tags.number) literal.
+       */
        integer: t(number),
-       /// A floating-point [number](#highlight.tags.number) literal.
+       /**
+       A floating-point [number](#highlight.tags.number) literal.
+       */
        float: t(number),
-       /// A boolean [literal](#highlight.tags.literal).
+       /**
+       A boolean [literal](#highlight.tags.literal).
+       */
        bool: t(literal),
-       /// Regular expression [literal](#highlight.tags.literal).
+       /**
+       Regular expression [literal](#highlight.tags.literal).
+       */
        regexp: t(literal),
-       /// An escape [literal](#highlight.tags.literal), for example a
-       /// backslash escape in a string.
+       /**
+       An escape [literal](#highlight.tags.literal), for example a
+       backslash escape in a string.
+       */
        escape: t(literal),
-       /// A color [literal](#highlight.tags.literal).
+       /**
+       A color [literal](#highlight.tags.literal).
+       */
        color: t(literal),
-       /// A URL [literal](#highlight.tags.literal).
+       /**
+       A URL [literal](#highlight.tags.literal).
+       */
        url: t(literal),
-       /// A language keyword.
+       /**
+       A language keyword.
+       */
        keyword,
-       /// The [keyword](#highlight.tags.keyword) for the self or this
-       /// object.
+       /**
+       The [keyword](#highlight.tags.keyword) for the self or this
+       object.
+       */
        self: t(keyword),
-       /// The [keyword](#highlight.tags.keyword) for null.
+       /**
+       The [keyword](#highlight.tags.keyword) for null.
+       */
        null: t(keyword),
-       /// A [keyword](#highlight.tags.keyword) denoting some atomic value.
+       /**
+       A [keyword](#highlight.tags.keyword) denoting some atomic value.
+       */
        atom: t(keyword),
-       /// A [keyword](#highlight.tags.keyword) that represents a unit.
+       /**
+       A [keyword](#highlight.tags.keyword) that represents a unit.
+       */
        unit: t(keyword),
-       /// A modifier [keyword](#highlight.tags.keyword).
+       /**
+       A modifier [keyword](#highlight.tags.keyword).
+       */
        modifier: t(keyword),
-       /// A [keyword](#highlight.tags.keyword) that acts as an operator.
+       /**
+       A [keyword](#highlight.tags.keyword) that acts as an operator.
+       */
        operatorKeyword: t(keyword),
-       /// A control-flow related [keyword](#highlight.tags.keyword).
+       /**
+       A control-flow related [keyword](#highlight.tags.keyword).
+       */
        controlKeyword: t(keyword),
-       /// A [keyword](#highlight.tags.keyword) that defines something.
+       /**
+       A [keyword](#highlight.tags.keyword) that defines something.
+       */
        definitionKeyword: t(keyword),
-       /// A [keyword](#highlight.tags.keyword) related to defining or
-       /// interfacing with modules.
+       /**
+       A [keyword](#highlight.tags.keyword) related to defining or
+       interfacing with modules.
+       */
        moduleKeyword: t(keyword),
-       /// An operator.
+       /**
+       An operator.
+       */
        operator,
-       /// An [operator](#highlight.tags.operator) that dereferences something.
+       /**
+       An [operator](#highlight.tags.operator) that dereferences something.
+       */
        derefOperator: t(operator),
-       /// Arithmetic-related [operator](#highlight.tags.operator).
+       /**
+       Arithmetic-related [operator](#highlight.tags.operator).
+       */
        arithmeticOperator: t(operator),
-       /// Logical [operator](#highlight.tags.operator).
+       /**
+       Logical [operator](#highlight.tags.operator).
+       */
        logicOperator: t(operator),
-       /// Bit [operator](#highlight.tags.operator).
+       /**
+       Bit [operator](#highlight.tags.operator).
+       */
        bitwiseOperator: t(operator),
-       /// Comparison [operator](#highlight.tags.operator).
+       /**
+       Comparison [operator](#highlight.tags.operator).
+       */
        compareOperator: t(operator),
-       /// [Operator](#highlight.tags.operator) that updates its operand.
+       /**
+       [Operator](#highlight.tags.operator) that updates its operand.
+       */
        updateOperator: t(operator),
-       /// [Operator](#highlight.tags.operator) that defines something.
+       /**
+       [Operator](#highlight.tags.operator) that defines something.
+       */
        definitionOperator: t(operator),
-       /// Type-related [operator](#highlight.tags.operator).
+       /**
+       Type-related [operator](#highlight.tags.operator).
+       */
        typeOperator: t(operator),
-       /// Control-flow [operator](#highlight.tags.operator).
+       /**
+       Control-flow [operator](#highlight.tags.operator).
+       */
        controlOperator: t(operator),
-       /// Program or markup punctuation.
+       /**
+       Program or markup punctuation.
+       */
        punctuation,
-       /// [Punctuation](#highlight.tags.punctuation) that separates
-       /// things.
+       /**
+       [Punctuation](#highlight.tags.punctuation) that separates
+       things.
+       */
        separator: t(punctuation),
-       /// Bracket-style [punctuation](#highlight.tags.punctuation).
+       /**
+       Bracket-style [punctuation](#highlight.tags.punctuation).
+       */
        bracket,
-       /// Angle [brackets](#highlight.tags.bracket) (usually `<` and `>`
-       /// tokens).
+       /**
+       Angle [brackets](#highlight.tags.bracket) (usually `<` and `>`
+       tokens).
+       */
        angleBracket: t(bracket),
-       /// Square [brackets](#highlight.tags.bracket) (usually `[` and `]`
-       /// tokens).
+       /**
+       Square [brackets](#highlight.tags.bracket) (usually `[` and `]`
+       tokens).
+       */
        squareBracket: t(bracket),
-       /// Parentheses (usually `(` and `)` tokens). Subtag of
-       /// [bracket](#highlight.tags.bracket).
+       /**
+       Parentheses (usually `(` and `)` tokens). Subtag of
+       [bracket](#highlight.tags.bracket).
+       */
        paren: t(bracket),
-       /// Braces (usually `{` and `}` tokens). Subtag of
-       /// [bracket](#highlight.tags.bracket).
+       /**
+       Braces (usually `{` and `}` tokens). Subtag of
+       [bracket](#highlight.tags.bracket).
+       */
        brace: t(bracket),
-       /// Content, for example plain text in XML or markup documents.
+       /**
+       Content, for example plain text in XML or markup documents.
+       */
        content,
-       /// [Content](#highlight.tags.content) that represents a heading.
+       /**
+       [Content](#highlight.tags.content) that represents a heading.
+       */
        heading,
-       /// A level 1 [heading](#highlight.tags.heading).
+       /**
+       A level 1 [heading](#highlight.tags.heading).
+       */
        heading1: t(heading),
-       /// A level 2 [heading](#highlight.tags.heading).
+       /**
+       A level 2 [heading](#highlight.tags.heading).
+       */
        heading2: t(heading),
-       /// A level 3 [heading](#highlight.tags.heading).
+       /**
+       A level 3 [heading](#highlight.tags.heading).
+       */
        heading3: t(heading),
-       /// A level 4 [heading](#highlight.tags.heading).
+       /**
+       A level 4 [heading](#highlight.tags.heading).
+       */
        heading4: t(heading),
-       /// A level 5 [heading](#highlight.tags.heading).
+       /**
+       A level 5 [heading](#highlight.tags.heading).
+       */
        heading5: t(heading),
-       /// A level 6 [heading](#highlight.tags.heading).
+       /**
+       A level 6 [heading](#highlight.tags.heading).
+       */
        heading6: t(heading),
-       /// A prose separator (such as a horizontal rule).
+       /**
+       A prose separator (such as a horizontal rule).
+       */
        contentSeparator: t(content),
-       /// [Content](#highlight.tags.content) that represents a list.
+       /**
+       [Content](#highlight.tags.content) that represents a list.
+       */
        list: t(content),
-       /// [Content](#highlight.tags.content) that represents a quote.
+       /**
+       [Content](#highlight.tags.content) that represents a quote.
+       */
        quote: t(content),
-       /// [Content](#highlight.tags.content) that is emphasized.
+       /**
+       [Content](#highlight.tags.content) that is emphasized.
+       */
        emphasis: t(content),
-       /// [Content](#highlight.tags.content) that is styled strong.
+       /**
+       [Content](#highlight.tags.content) that is styled strong.
+       */
        strong: t(content),
-       /// [Content](#highlight.tags.content) that is part of a link.
+       /**
+       [Content](#highlight.tags.content) that is part of a link.
+       */
        link: t(content),
-       /// [Content](#highlight.tags.content) that is styled as code or
-       /// monospace.
+       /**
+       [Content](#highlight.tags.content) that is styled as code or
+       monospace.
+       */
        monospace: t(content),
-       /// [Content](#highlight.tags.content) that has a strike-through
-       /// style.
+       /**
+       [Content](#highlight.tags.content) that has a strike-through
+       style.
+       */
        strikethrough: t(content),
-       /// Inserted text in a change-tracking format.
+       /**
+       Inserted text in a change-tracking format.
+       */
        inserted: t(),
-       /// Deleted text.
+       /**
+       Deleted text.
+       */
        deleted: t(),
-       /// Changed text.
+       /**
+       Changed text.
+       */
        changed: t(),
-       /// An invalid or unsyntactic element.
+       /**
+       An invalid or unsyntactic element.
+       */
        invalid: t(),
-       /// Metadata or meta-instruction.
+       /**
+       Metadata or meta-instruction.
+       */
        meta,
-       /// [Metadata](#highlight.tags.meta) that applies to the entire
-       /// document.
+       /**
+       [Metadata](#highlight.tags.meta) that applies to the entire
+       document.
+       */
        documentMeta: t(meta),
-       /// [Metadata](#highlight.tags.meta) that annotates or adds
-       /// attributes to a given syntactic element.
+       /**
+       [Metadata](#highlight.tags.meta) that annotates or adds
+       attributes to a given syntactic element.
+       */
        annotation: t(meta),
-       /// Processing instruction or preprocessor directive. Subtag of
-       /// [meta](#highlight.tags.meta).
+       /**
+       Processing instruction or preprocessor directive. Subtag of
+       [meta](#highlight.tags.meta).
+       */
        processingInstruction: t(meta),
-       /// [Modifier](#highlight.Tag^defineModifier) that indicates that a
-       /// given element is being defined. Expected to be used with the
-       /// various [name](#highlight.tags.name) tags.
+       /**
+       [Modifier](#highlight.Tag^defineModifier) that indicates that a
+       given element is being defined. Expected to be used with the
+       various [name](#highlight.tags.name) tags.
+       */
        definition: Tag.defineModifier(),
-       /// [Modifier](#highlight.Tag^defineModifier) that indicates that
-       /// something is constant. Mostly expected to be used with
-       /// [variable names](#highlight.tags.variableName).
+       /**
+       [Modifier](#highlight.Tag^defineModifier) that indicates that
+       something is constant. Mostly expected to be used with
+       [variable names](#highlight.tags.variableName).
+       */
        constant: Tag.defineModifier(),
-       /// [Modifier](#highlight.Tag^defineModifier) used to indicate that
-       /// a [variable](#highlight.tags.variableName) or [property
-       /// name](#highlight.tags.propertyName) is being called or defined
-       /// as a function.
+       /**
+       [Modifier](#highlight.Tag^defineModifier) used to indicate that
+       a [variable](#highlight.tags.variableName) or [property
+       name](#highlight.tags.propertyName) is being called or defined
+       as a function.
+       */
        function: Tag.defineModifier(),
-       /// [Modifier](#highlight.Tag^defineModifier) that can be applied to
-       /// [names](#highlight.tags.name) to indicate that they belong to
-       /// the language's standard environment.
+       /**
+       [Modifier](#highlight.Tag^defineModifier) that can be applied to
+       [names](#highlight.tags.name) to indicate that they belong to
+       the language's standard environment.
+       */
        standard: Tag.defineModifier(),
-       /// [Modifier](#highlight.Tag^defineModifier) that indicates a given
-       /// [names](#highlight.tags.name) is local to some scope.
+       /**
+       [Modifier](#highlight.Tag^defineModifier) that indicates a given
+       [names](#highlight.tags.name) is local to some scope.
+       */
        local: Tag.defineModifier(),
-       /// A generic variant [modifier](#highlight.Tag^defineModifier) that
-       /// can be used to tag language-specific alternative variants of
-       /// some common tag. It is recommended for themes to define special
-       /// forms of at least the [string](#highlight.tags.string) and
-       /// [variable name](#highlight.tags.variableName) tags, since those
-       /// come up a lot.
+       /**
+       A generic variant [modifier](#highlight.Tag^defineModifier) that
+       can be used to tag language-specific alternative variants of
+       some common tag. It is recommended for themes to define special
+       forms of at least the [string](#highlight.tags.string) and
+       [variable name](#highlight.tags.variableName) tags, since those
+       come up a lot.
+       */
        special: Tag.defineModifier()
    };
-   /// This is a highlighter that adds stable, predictable classes to
-   /// tokens, for styling with external CSS.
-   ///
-   /// The following tags are mapped to their name prefixed with `"tok-"`
-   /// (for example `"tok-comment"`):
-   ///
-   /// * [`link`](#highlight.tags.link)
-   /// * [`heading`](#highlight.tags.heading)
-   /// * [`emphasis`](#highlight.tags.emphasis)
-   /// * [`strong`](#highlight.tags.strong)
-   /// * [`keyword`](#highlight.tags.keyword)
-   /// * [`atom`](#highlight.tags.atom)
-   /// * [`bool`](#highlight.tags.bool)
-   /// * [`url`](#highlight.tags.url)
-   /// * [`labelName`](#highlight.tags.labelName)
-   /// * [`inserted`](#highlight.tags.inserted)
-   /// * [`deleted`](#highlight.tags.deleted)
-   /// * [`literal`](#highlight.tags.literal)
-   /// * [`string`](#highlight.tags.string)
-   /// * [`number`](#highlight.tags.number)
-   /// * [`variableName`](#highlight.tags.variableName)
-   /// * [`typeName`](#highlight.tags.typeName)
-   /// * [`namespace`](#highlight.tags.namespace)
-   /// * [`className`](#highlight.tags.className)
-   /// * [`macroName`](#highlight.tags.macroName)
-   /// * [`propertyName`](#highlight.tags.propertyName)
-   /// * [`operator`](#highlight.tags.operator)
-   /// * [`comment`](#highlight.tags.comment)
-   /// * [`meta`](#highlight.tags.meta)
-   /// * [`punctuation`](#highlight.tags.punctuation)
-   /// * [`invalid`](#highlight.tags.invalid)
-   ///
-   /// In addition, these mappings are provided:
-   ///
-   /// * [`regexp`](#highlight.tags.regexp),
-   ///   [`escape`](#highlight.tags.escape), and
-   ///   [`special`](#highlight.tags.special)[`(string)`](#highlight.tags.string)
-   ///   are mapped to `"tok-string2"`
-   /// * [`special`](#highlight.tags.special)[`(variableName)`](#highlight.tags.variableName)
-   ///   to `"tok-variableName2"`
-   /// * [`local`](#highlight.tags.local)[`(variableName)`](#highlight.tags.variableName)
-   ///   to `"tok-variableName tok-local"`
-   /// * [`definition`](#highlight.tags.definition)[`(variableName)`](#highlight.tags.variableName)
-   ///   to `"tok-variableName tok-definition"`
-   /// * [`definition`](#highlight.tags.definition)[`(propertyName)`](#highlight.tags.propertyName)
-   ///   to `"tok-propertyName tok-definition"`
+   /**
+   This is a highlighter that adds stable, predictable classes to
+   tokens, for styling with external CSS.
+
+   The following tags are mapped to their name prefixed with `"tok-"`
+   (for example `"tok-comment"`):
+
+   * [`link`](#highlight.tags.link)
+   * [`heading`](#highlight.tags.heading)
+   * [`emphasis`](#highlight.tags.emphasis)
+   * [`strong`](#highlight.tags.strong)
+   * [`keyword`](#highlight.tags.keyword)
+   * [`atom`](#highlight.tags.atom)
+   * [`bool`](#highlight.tags.bool)
+   * [`url`](#highlight.tags.url)
+   * [`labelName`](#highlight.tags.labelName)
+   * [`inserted`](#highlight.tags.inserted)
+   * [`deleted`](#highlight.tags.deleted)
+   * [`literal`](#highlight.tags.literal)
+   * [`string`](#highlight.tags.string)
+   * [`number`](#highlight.tags.number)
+   * [`variableName`](#highlight.tags.variableName)
+   * [`typeName`](#highlight.tags.typeName)
+   * [`namespace`](#highlight.tags.namespace)
+   * [`className`](#highlight.tags.className)
+   * [`macroName`](#highlight.tags.macroName)
+   * [`propertyName`](#highlight.tags.propertyName)
+   * [`operator`](#highlight.tags.operator)
+   * [`comment`](#highlight.tags.comment)
+   * [`meta`](#highlight.tags.meta)
+   * [`punctuation`](#highlight.tags.punctuation)
+   * [`invalid`](#highlight.tags.invalid)
+
+   In addition, these mappings are provided:
+
+   * [`regexp`](#highlight.tags.regexp),
+     [`escape`](#highlight.tags.escape), and
+     [`special`](#highlight.tags.special)[`(string)`](#highlight.tags.string)
+     are mapped to `"tok-string2"`
+   * [`special`](#highlight.tags.special)[`(variableName)`](#highlight.tags.variableName)
+     to `"tok-variableName2"`
+   * [`local`](#highlight.tags.local)[`(variableName)`](#highlight.tags.variableName)
+     to `"tok-variableName tok-local"`
+   * [`definition`](#highlight.tags.definition)[`(variableName)`](#highlight.tags.variableName)
+     to `"tok-variableName tok-definition"`
+   * [`definition`](#highlight.tags.definition)[`(propertyName)`](#highlight.tags.propertyName)
+     to `"tok-propertyName tok-definition"`
+   */
    tagHighlighter([
        { tag: tags.link, class: "tok-link" },
        { tag: tags.heading, class: "tok-heading" },
@@ -15608,6 +16182,11 @@
        });
    }
    /**
+   Syntax node prop used to register sublanguages. Should be added to
+   the top level node type for the language.
+   */
+   const sublanguageProp = /*@__PURE__*/new NodeProp();
+   /**
    A language object manages parsing and per-language
    [metadata](https://codemirror.net/6/docs/ref/#state.EditorState.languageDataAt). Parse data is
    managed as a [Lezer](https://lezer.codemirror.net) tree. The class
@@ -15644,14 +16223,28 @@
            this.parser = parser;
            this.extension = [
                language.of(this),
-               EditorState.languageData.of((state, pos, side) => state.facet(languageDataFacetAt(state, pos, side)))
+               EditorState.languageData.of((state, pos, side) => {
+                   let top = topNodeAt(state, pos, side), data = top.type.prop(languageDataProp);
+                   if (!data)
+                       return [];
+                   let base = state.facet(data), sub = top.type.prop(sublanguageProp);
+                   if (sub) {
+                       let innerNode = top.resolve(pos - top.from, side);
+                       for (let sublang of sub)
+                           if (sublang.test(innerNode, state)) {
+                               let data = state.facet(sublang.facet);
+                               return sublang.type == "replace" ? data : data.concat(base);
+                           }
+                   }
+                   return base;
+               })
            ].concat(extraExtensions);
        }
        /**
        Query whether this language is active at the given position.
        */
        isActiveAt(state, pos, side = -1) {
-           return languageDataFacetAt(state, pos, side) == this.data;
+           return topNodeAt(state, pos, side).type.prop(languageDataProp) == this.data;
        }
        /**
        Find the document regions that were parsed using this language.
@@ -15706,16 +16299,14 @@
    @internal
    */
    Language.setState = /*@__PURE__*/StateEffect.define();
-   function languageDataFacetAt(state, pos, side) {
-       let topLang = state.facet(language);
-       if (!topLang)
-           return null;
-       let facet = topLang.data;
-       if (topLang.allowsNesting) {
-           for (let node = syntaxTree(state).topNode; node; node = node.enter(pos, side, IterMode.ExcludeBuffers))
-               facet = node.type.prop(languageDataProp) || facet;
+   function topNodeAt(state, pos, side) {
+       let topLang = state.facet(language), tree = syntaxTree(state).topNode;
+       if (!topLang || topLang.allowsNesting) {
+           for (let node = tree; node; node = node.enter(pos, side, IterMode.ExcludeBuffers))
+               if (node.type.isTop)
+                   tree = node;
        }
-       return facet;
+       return tree;
    }
    /**
    A subclass of [`Language`](https://codemirror.net/6/docs/ref/#language.Language) for use with Lezer
@@ -15755,15 +16346,22 @@
        let field = state.field(Language.state, false);
        return field ? field.tree : Tree.empty;
    }
-   // Lezer-style Input object for a Text document.
+   /**
+   Lezer-style
+   [`Input`](https://lezer.codemirror.net/docs/ref#common.Input)
+   object for a [`Text`](https://codemirror.net/6/docs/ref/#state.Text) object.
+   */
    class DocInput {
-       constructor(doc, length = doc.length) {
+       /**
+       Create an input object for the given document.
+       */
+       constructor(doc) {
            this.doc = doc;
-           this.length = length;
            this.cursorPos = 0;
            this.string = "";
            this.cursor = doc.iter();
        }
+       get length() { return this.doc.length; }
        syncTo(pos) {
            this.string = this.cursor.next(pos - this.cursorPos).value;
            this.cursorPos = pos + this.string.length;
@@ -16042,14 +16640,14 @@
            // state updates with parse work beyond the viewport.
            let upto = this.context.treeLen == tr.startState.doc.length ? undefined
                : Math.max(tr.changes.mapPos(this.context.treeLen), newCx.viewport.to);
-           if (!newCx.work(20 /* Work.Apply */, upto))
+           if (!newCx.work(20 /* Apply */, upto))
                newCx.takeTree();
            return new LanguageState(newCx);
        }
        static init(state) {
-           let vpTo = Math.min(3000 /* Work.InitViewport */, state.doc.length);
+           let vpTo = Math.min(3000 /* InitViewport */, state.doc.length);
            let parseState = ParseContext.create(state.facet(language).parser, state, { from: 0, to: vpTo });
-           if (!parseState.work(20 /* Work.Apply */, vpTo))
+           if (!parseState.work(20 /* Apply */, vpTo))
                parseState.takeTree();
            return new LanguageState(parseState);
        }
@@ -16066,14 +16664,14 @@
        }
    });
    let requestIdle = (callback) => {
-       let timeout = setTimeout(() => callback(), 500 /* Work.MaxPause */);
+       let timeout = setTimeout(() => callback(), 500 /* MaxPause */);
        return () => clearTimeout(timeout);
    };
    if (typeof requestIdleCallback != "undefined")
        requestIdle = (callback) => {
            let idle = -1, timeout = setTimeout(() => {
-               idle = requestIdleCallback(callback, { timeout: 500 /* Work.MaxPause */ - 100 /* Work.MinPause */ });
-           }, 100 /* Work.MinPause */);
+               idle = requestIdleCallback(callback, { timeout: 500 /* MaxPause */ - 100 /* MinPause */ });
+           }, 100 /* MinPause */);
            return () => idle < 0 ? clearTimeout(timeout) : cancelIdleCallback(idle);
        };
    const isInputPending = typeof navigator != "undefined" && ((_a = navigator.scheduling) === null || _a === void 0 ? void 0 : _a.isInputPending)
@@ -16096,7 +16694,7 @@
                this.scheduleWork();
            if (update.docChanged) {
                if (this.view.hasFocus)
-                   this.chunkBudget += 50 /* Work.ChangeBonus */;
+                   this.chunkBudget += 50 /* ChangeBonus */;
                this.scheduleWork();
            }
            this.checkAsyncSchedule(cx);
@@ -16112,19 +16710,19 @@
            this.working = null;
            let now = Date.now();
            if (this.chunkEnd < now && (this.chunkEnd < 0 || this.view.hasFocus)) { // Start a new chunk
-               this.chunkEnd = now + 30000 /* Work.ChunkTime */;
-               this.chunkBudget = 3000 /* Work.ChunkBudget */;
+               this.chunkEnd = now + 30000 /* ChunkTime */;
+               this.chunkBudget = 3000 /* ChunkBudget */;
            }
            if (this.chunkBudget <= 0)
                return; // No more budget
            let { state, viewport: { to: vpTo } } = this.view, field = state.field(Language.state);
-           if (field.tree == field.context.tree && field.context.isDone(vpTo + 100000 /* Work.MaxParseAhead */))
+           if (field.tree == field.context.tree && field.context.isDone(vpTo + 100000 /* MaxParseAhead */))
                return;
-           let endTime = Date.now() + Math.min(this.chunkBudget, 100 /* Work.Slice */, deadline && !isInputPending ? Math.max(25 /* Work.MinSlice */, deadline.timeRemaining() - 5) : 1e9);
+           let endTime = Date.now() + Math.min(this.chunkBudget, 100 /* Slice */, deadline && !isInputPending ? Math.max(25 /* MinSlice */, deadline.timeRemaining() - 5) : 1e9);
            let viewportFirst = field.context.treeLen < vpTo && state.doc.length > vpTo + 1000;
            let done = field.context.work(() => {
                return isInputPending && isInputPending() || Date.now() > endTime;
-           }, vpTo + (viewportFirst ? 0 : 100000 /* Work.MaxParseAhead */));
+           }, vpTo + (viewportFirst ? 0 : 100000 /* MaxParseAhead */));
            this.chunkBudget -= Date.now() - now;
            if (done || this.chunkBudget <= 0) {
                field.context.takeTree();
@@ -16211,17 +16809,18 @@
    */
    const indentService = /*@__PURE__*/Facet.define();
    /**
-   Facet for overriding the unit by which indentation happens.
-   Should be a string consisting either entirely of spaces or
-   entirely of tabs. When not set, this defaults to 2 spaces.
+   Facet for overriding the unit by which indentation happens. Should
+   be a string consisting either entirely of the same whitespace
+   character. When not set, this defaults to 2 spaces.
    */
    const indentUnit = /*@__PURE__*/Facet.define({
        combine: values => {
            if (!values.length)
                return "  ";
-           if (!/^(?: +|\t+)$/.test(values[0]))
+           let unit = values[0];
+           if (!unit || /\S/.test(unit) || Array.from(unit).some(e => e != unit[0]))
                throw new Error("Invalid indent unit: " + JSON.stringify(values[0]));
-           return values[0];
+           return unit;
        }
    });
    /**
@@ -16241,14 +16840,16 @@
    tabs.
    */
    function indentString(state, cols) {
-       let result = "", ts = state.tabSize;
-       if (state.facet(indentUnit).charCodeAt(0) == 9)
+       let result = "", ts = state.tabSize, ch = state.facet(indentUnit)[0];
+       if (ch == "\t") {
            while (cols >= ts) {
                result += "\t";
                cols -= ts;
            }
+           ch = " ";
+       }
        for (let i = 0; i < cols; i++)
-           result += " ";
+           result += ch;
        return result;
    }
    /**
@@ -16441,13 +17042,20 @@
        on if it is covered by another such node.
        */
        get baseIndent() {
-           let line = this.state.doc.lineAt(this.node.from);
+           return this.baseIndentFor(this.node);
+       }
+       /**
+       Get the indentation for the reference line of the given node
+       (see [`baseIndent`](https://codemirror.net/6/docs/ref/#language.TreeIndentContext.baseIndent)).
+       */
+       baseIndentFor(node) {
+           let line = this.state.doc.lineAt(node.from);
            // Skip line starts that are covered by a sibling (or cousin, etc)
            for (;;) {
-               let atBreak = this.node.resolve(line.from);
+               let atBreak = node.resolve(line.from);
                while (atBreak.parent && atBreak.parent.from == atBreak.from)
                    atBreak = atBreak.parent;
-               if (isParent(atBreak, this.node))
+               if (isParent(atBreak, node))
                    break;
                line = this.state.doc.lineAt(atBreak.from);
            }
@@ -17147,6 +17755,15 @@
    function bracketMatching(config = {}) {
        return [bracketMatchingConfig.of(config), bracketMatchingUnique];
    }
+   /**
+   When larger syntax nodes, such as HTML tags, are marked as
+   opening/closing, it can be a bit messy to treat the whole node as
+   a matchable bracket. This node prop allows you to define, for such
+   a node, a ‘handle’—the part of the node that is highlighted, and
+   that the cursor must be on to activate highlighting in the first
+   place.
+   */
+   const bracketMatchingHandle = /*@__PURE__*/new NodeProp();
    function matchingNodes(node, dir, brackets) {
        let byProp = node.prop(dir < 0 ? NodeProp.openedBy : NodeProp.closedBy);
        if (byProp)
@@ -17157,6 +17774,10 @@
                return [brackets[index + dir]];
        }
        return null;
+   }
+   function findHandle(node) {
+       let hasHandle = node.type.prop(bracketMatchingHandle);
+       return hasHandle ? hasHandle(node.node) : node;
    }
    /**
    Find the matching bracket for the token at `pos`, scanning
@@ -17169,30 +17790,36 @@
        let tree = syntaxTree(state), node = tree.resolveInner(pos, dir);
        for (let cur = node; cur; cur = cur.parent) {
            let matches = matchingNodes(cur.type, dir, brackets);
-           if (matches && cur.from < cur.to)
-               return matchMarkedBrackets(state, pos, dir, cur, matches, brackets);
+           if (matches && cur.from < cur.to) {
+               let handle = findHandle(cur);
+               if (handle && (dir > 0 ? pos >= handle.from && pos < handle.to : pos > handle.from && pos <= handle.to))
+                   return matchMarkedBrackets(state, pos, dir, cur, handle, matches, brackets);
+           }
        }
        return matchPlainBrackets(state, pos, dir, tree, node.type, maxScanDistance, brackets);
    }
-   function matchMarkedBrackets(_state, _pos, dir, token, matching, brackets) {
-       let parent = token.parent, firstToken = { from: token.from, to: token.to };
+   function matchMarkedBrackets(_state, _pos, dir, token, handle, matching, brackets) {
+       let parent = token.parent, firstToken = { from: handle.from, to: handle.to };
        let depth = 0, cursor = parent === null || parent === void 0 ? void 0 : parent.cursor();
        if (cursor && (dir < 0 ? cursor.childBefore(token.from) : cursor.childAfter(token.to)))
            do {
                if (dir < 0 ? cursor.to <= token.from : cursor.from >= token.to) {
                    if (depth == 0 && matching.indexOf(cursor.type.name) > -1 && cursor.from < cursor.to) {
-                       return { start: firstToken, end: { from: cursor.from, to: cursor.to }, matched: true };
+                       let endHandle = findHandle(cursor);
+                       return { start: firstToken, end: endHandle ? { from: endHandle.from, to: endHandle.to } : undefined, matched: true };
                    }
                    else if (matchingNodes(cursor.type, dir, brackets)) {
                        depth++;
                    }
                    else if (matchingNodes(cursor.type, -dir, brackets)) {
-                       if (depth == 0)
+                       if (depth == 0) {
+                           let endHandle = findHandle(cursor);
                            return {
                                start: firstToken,
-                               end: cursor.from == cursor.to ? undefined : { from: cursor.from, to: cursor.to },
+                               end: endHandle && endHandle.from < endHandle.to ? { from: endHandle.from, to: endHandle.to } : undefined,
                                matched: false
                            };
+                       }
                        depth--;
                    }
                }
@@ -17291,7 +17918,7 @@
    if available, otherwise falling back to block comments.
    */
    const toggleComment = target => {
-       let config = getConfig(target.state);
+       let { state } = target, line = state.doc.lineAt(state.selection.main.from), config = getConfig(target.state, line.from);
        return config.line ? toggleLineComment(target) : config.block ? toggleBlockCommentByLine(target) : false;
    };
    function command(f, option) {
@@ -17324,7 +17951,7 @@
    block comments.
    */
    const toggleBlockCommentByLine = /*@__PURE__*/command((o, s) => changeBlockComment(o, s, selectedLineRanges(s)), 0 /* CommentOption.Toggle */);
-   function getConfig(state, pos = state.selection.main.head) {
+   function getConfig(state, pos) {
        let data = state.languageDataAt("commentTokens", pos);
        return data.length ? data[0] : {};
    }
@@ -17371,7 +17998,7 @@
            if (last >= 0 && ranges[last].to > fromLine.from)
                ranges[last].to = toLine.to;
            else
-               ranges.push({ from: fromLine.from, to: toLine.to });
+               ranges.push({ from: fromLine.from + /^\s*/.exec(fromLine.text)[0].length, to: toLine.to });
        }
        return ranges;
    }
@@ -17406,13 +18033,13 @@
        let prevLine = -1;
        for (let { from, to } of ranges) {
            let startI = lines.length, minIndent = 1e9;
+           let token = getConfig(state, from).line;
+           if (!token)
+               continue;
            for (let pos = from; pos <= to;) {
                let line = state.doc.lineAt(pos);
                if (line.from > prevLine && (from == to || to > line.from)) {
                    prevLine = line.from;
-                   let token = getConfig(state, pos).line;
-                   if (!token)
-                       continue;
                    let indent = /^\s*/.exec(line.text)[0].length;
                    let empty = indent == line.length;
                    let comment = line.text.slice(indent, indent + token.length) == token ? indent : -1;
@@ -17472,8 +18099,13 @@
        combine(configs) {
            return combineConfig(configs, {
                minDepth: 100,
-               newGroupDelay: 500
-           }, { minDepth: Math.max, newGroupDelay: Math.min });
+               newGroupDelay: 500,
+               joinToEvent: (_t, isAdjacent) => isAdjacent,
+           }, {
+               minDepth: Math.max,
+               newGroupDelay: Math.min,
+               joinToEvent: (a, b) => (tr, adj) => a(tr, adj) || b(tr, adj)
+           });
        }
    });
    function changeEnd(changes) {
@@ -17506,7 +18138,7 @@
            let event = HistEvent.fromTransaction(tr);
            let time = tr.annotation(Transaction.time), userEvent = tr.annotation(Transaction.userEvent);
            if (event)
-               state = state.addChanges(event, time, userEvent, config.newGroupDelay, config.minDepth);
+               state = state.addChanges(event, time, userEvent, config, tr);
            else if (tr.selection)
                state = state.addSelection(tr.startState.selection, time, userEvent, config.newGroupDelay);
            if (isolate == "full" || isolate == "after")
@@ -17718,19 +18350,19 @@
        isolate() {
            return this.prevTime ? new HistoryState(this.done, this.undone) : this;
        }
-       addChanges(event, time, userEvent, newGroupDelay, maxLen) {
+       addChanges(event, time, userEvent, config, tr) {
            let done = this.done, lastEvent = done[done.length - 1];
            if (lastEvent && lastEvent.changes && !lastEvent.changes.empty && event.changes &&
                (!userEvent || joinableUserEvent.test(userEvent)) &&
                ((!lastEvent.selectionsAfter.length &&
-                   time - this.prevTime < newGroupDelay &&
-                   isAdjacent(lastEvent.changes, event.changes)) ||
+                   time - this.prevTime < config.newGroupDelay &&
+                   config.joinToEvent(tr, isAdjacent(lastEvent.changes, event.changes))) ||
                    // For compose (but not compose.start) events, always join with previous event
                    userEvent == "input.type.compose")) {
-               done = updateBranch(done, done.length - 1, maxLen, new HistEvent(event.changes.compose(lastEvent.changes), conc(event.effects, lastEvent.effects), lastEvent.mapped, lastEvent.startSelection, none$1));
+               done = updateBranch(done, done.length - 1, config.minDepth, new HistEvent(event.changes.compose(lastEvent.changes), conc(event.effects, lastEvent.effects), lastEvent.mapped, lastEvent.startSelection, none$1));
            }
            else {
-               done = updateBranch(done, done.length, maxLen, event);
+               done = updateBranch(done, done.length, config.minDepth, event);
            }
            return new HistoryState(done, none$1, time, userEvent);
        }
@@ -17889,21 +18521,41 @@
    Move the selection one line down.
    */
    const cursorLineDown = view => cursorByLine(view, true);
-   function pageHeight(view) {
-       return Math.max(view.defaultLineHeight, Math.min(view.dom.clientHeight, innerHeight) - 5);
+   function pageInfo(view) {
+       let selfScroll = view.scrollDOM.clientHeight < view.scrollDOM.scrollHeight - 2;
+       let marginTop = 0, marginBottom = 0, height;
+       if (selfScroll) {
+           for (let source of view.state.facet(EditorView.scrollMargins)) {
+               let margins = source(view);
+               if (margins === null || margins === void 0 ? void 0 : margins.top)
+                   marginTop = Math.max(margins === null || margins === void 0 ? void 0 : margins.top, marginTop);
+               if (margins === null || margins === void 0 ? void 0 : margins.bottom)
+                   marginBottom = Math.max(margins === null || margins === void 0 ? void 0 : margins.bottom, marginBottom);
+           }
+           height = view.scrollDOM.clientHeight - marginTop - marginBottom;
+       }
+       else {
+           height = (view.dom.ownerDocument.defaultView || window).innerHeight;
+       }
+       return { marginTop, marginBottom, selfScroll,
+           height: Math.max(view.defaultLineHeight, height - 5) };
    }
    function cursorByPage(view, forward) {
+       let page = pageInfo(view);
        let { state } = view, selection = updateSel(state.selection, range => {
-           return range.empty ? view.moveVertically(range, forward, pageHeight(view)) : rangeEnd(range, forward);
+           return range.empty ? view.moveVertically(range, forward, page.height)
+               : rangeEnd(range, forward);
        });
        if (selection.eq(state.selection))
            return false;
-       let startPos = view.coordsAtPos(state.selection.main.head);
-       let scrollRect = view.scrollDOM.getBoundingClientRect();
        let effect;
-       if (startPos && startPos.top > scrollRect.top && startPos.bottom < scrollRect.bottom &&
-           startPos.top - scrollRect.top <= view.scrollDOM.scrollHeight - view.scrollDOM.scrollTop - view.scrollDOM.clientHeight)
-           effect = EditorView.scrollIntoView(selection.main.head, { y: "start", yMargin: startPos.top - scrollRect.top });
+       if (page.selfScroll) {
+           let startPos = view.coordsAtPos(state.selection.main.head);
+           let scrollRect = view.scrollDOM.getBoundingClientRect();
+           let scrollTop = scrollRect.top + page.marginTop, scrollBottom = scrollRect.bottom - page.marginBottom;
+           if (startPos && startPos.top > scrollTop && startPos.bottom < scrollBottom)
+               effect = EditorView.scrollIntoView(selection.main.head, { y: "start", yMargin: startPos.top - scrollTop });
+       }
        view.dispatch(setSel(state, selection), { effects: effect });
        return true;
    }
@@ -18030,7 +18682,7 @@
    */
    const selectLineDown = view => selectByLine(view, true);
    function selectByPage(view, forward) {
-       return extendSel(view, range => view.moveVertically(range, forward, pageHeight(view)));
+       return extendSel(view, range => view.moveVertically(range, forward, pageInfo(view).height));
    }
    /**
    Move the selection head one page up.
@@ -18624,7 +19276,7 @@
    - Shift-Alt-ArrowUp: [`copyLineUp`](https://codemirror.net/6/docs/ref/#commands.copyLineUp)
    - Shift-Alt-ArrowDown: [`copyLineDown`](https://codemirror.net/6/docs/ref/#commands.copyLineDown)
    - Escape: [`simplifySelection`](https://codemirror.net/6/docs/ref/#commands.simplifySelection)
-   - Ctrl-Enter (Comd-Enter on macOS): [`insertBlankLine`](https://codemirror.net/6/docs/ref/#commands.insertBlankLine)
+   - Ctrl-Enter (Cmd-Enter on macOS): [`insertBlankLine`](https://codemirror.net/6/docs/ref/#commands.insertBlankLine)
    - Alt-l (Ctrl-l on macOS): [`selectLine`](https://codemirror.net/6/docs/ref/#commands.selectLine)
    - Ctrl-i (Cmd-i on macOS): [`selectParentSyntax`](https://codemirror.net/6/docs/ref/#commands.selectParentSyntax)
    - Ctrl-[ (Cmd-[ on macOS): [`indentLess`](https://codemirror.net/6/docs/ref/#commands.indentLess)
@@ -18929,7 +19581,7 @@
            this.matchPos = toCharEnd(text, from);
            this.re = new RegExp(query, baseFlags + ((options === null || options === void 0 ? void 0 : options.ignoreCase) ? "i" : ""));
            this.test = options === null || options === void 0 ? void 0 : options.test;
-           this.flat = FlattenedDoc.get(text, from, this.chunkEnd(from + 5000 /* Chunk.Base */));
+           this.flat = FlattenedDoc.get(text, from, this.chunkEnd(from + 5000 /* Base */));
        }
        chunkEnd(pos) {
            return pos >= this.to ? this.to : this.text.lineAt(pos).to;
@@ -19051,9 +19703,6 @@
    `-`, document percentages suffixed with `%`, and an optional
    column position by adding `:` and a second number after the line
    number.
-
-   The dialog can be styled with the `panel.gotoLine` theme
-   selector.
    */
    const gotoLine = view => {
        let panel = getPanel(view, createLineDialog);
@@ -19239,8 +19888,10 @@
                top: false,
                caseSensitive: false,
                literal: false,
+               regexp: false,
                wholeWord: false,
-               createPanel: view => new SearchPanel(view)
+               createPanel: view => new SearchPanel(view),
+               scrollToMatch: range => EditorView.scrollIntoView(range)
            });
        }
    });
@@ -19323,11 +19974,11 @@
                cursor = stringCursor(this.spec, state, 0, curFrom).nextOverlapping();
            return cursor.done ? null : cursor.value;
        }
-       // Searching in reverse is, rather than implementing inverted search
+       // Searching in reverse is, rather than implementing an inverted search
        // cursor, done by scanning chunk after chunk forward.
        prevMatchInRange(state, from, to) {
            for (let pos = to;;) {
-               let start = Math.max(from, pos - 10000 /* FindPrev.ChunkSize */ - this.spec.unquoted.length);
+               let start = Math.max(from, pos - 10000 /* ChunkSize */ - this.spec.unquoted.length);
                let cursor = stringCursor(this.spec, state, start, pos), range = null;
                while (!cursor.nextOverlapping().done)
                    range = cursor.value;
@@ -19335,7 +19986,7 @@
                    return range;
                if (start == from)
                    return null;
-               pos -= 10000 /* FindPrev.ChunkSize */;
+               pos -= 10000 /* ChunkSize */;
            }
        }
        prevMatch(state, curFrom, curTo) {
@@ -19386,7 +20037,7 @@
        }
        prevMatchInRange(state, from, to) {
            for (let size = 1;; size++) {
-               let start = Math.max(from, to - size * 10000 /* FindPrev.ChunkSize */);
+               let start = Math.max(from, to - size * 10000 /* ChunkSize */);
                let cursor = regexpCursor(this.spec, state, start, to), range = null;
                while (!cursor.next().done)
                    range = cursor.value;
@@ -19416,7 +20067,7 @@
            return ranges;
        }
        highlight(state, from, to, add) {
-           let cursor = regexpCursor(this.spec, state, Math.max(0, from - 250 /* RegExp.HighlightMargin */), Math.min(to + 250 /* RegExp.HighlightMargin */, state.doc.length));
+           let cursor = regexpCursor(this.spec, state, Math.max(0, from - 250 /* HighlightMargin */), Math.min(to + 250 /* HighlightMargin */, state.doc.length));
            while (!cursor.next().done)
                add(cursor.value.from, cursor.value.to);
        }
@@ -19469,7 +20120,7 @@
            let builder = new RangeSetBuilder();
            for (let i = 0, ranges = view.visibleRanges, l = ranges.length; i < l; i++) {
                let { from, to } = ranges[i];
-               while (i < l - 1 && to > ranges[i + 1].from - 2 * 250 /* RegExp.HighlightMargin */)
+               while (i < l - 1 && to > ranges[i + 1].from - 2 * 250 /* HighlightMargin */)
                    to = ranges[++i].to;
                query.highlight(view.state, from, to, (from, to) => {
                    let selected = view.state.selection.ranges.some(r => r.from == from && r.to == to);
@@ -19498,12 +20149,14 @@
        let next = query.nextMatch(view.state, to, to);
        if (!next)
            return false;
+       let selection = EditorSelection.single(next.from, next.to);
+       let config = view.state.facet(searchConfigFacet);
        view.dispatch({
-           selection: { anchor: next.from, head: next.to },
-           scrollIntoView: true,
-           effects: announceMatch(view, next),
+           selection,
+           effects: [announceMatch(view, next), config.scrollToMatch(selection.main, view)],
            userEvent: "select.search"
        });
+       selectSearchInput(view);
        return true;
    });
    /**
@@ -19513,15 +20166,17 @@
    */
    const findPrevious = /*@__PURE__*/searchCommand((view, { query }) => {
        let { state } = view, { from } = state.selection.main;
-       let range = query.prevMatch(state, from, from);
-       if (!range)
+       let prev = query.prevMatch(state, from, from);
+       if (!prev)
            return false;
+       let selection = EditorSelection.single(prev.from, prev.to);
+       let config = view.state.facet(searchConfigFacet);
        view.dispatch({
-           selection: { anchor: range.from, head: range.to },
-           scrollIntoView: true,
-           effects: announceMatch(view, range),
+           selection,
+           effects: [announceMatch(view, prev), config.scrollToMatch(selection.main, view)],
            userEvent: "select.search"
        });
+       selectSearchInput(view);
        return true;
    });
    /**
@@ -19570,22 +20225,21 @@
        if (!next)
            return false;
        let changes = [], selection, replacement;
-       let announce = [];
+       let effects = [];
        if (next.from == from && next.to == to) {
            replacement = state.toText(query.getReplacement(next));
            changes.push({ from: next.from, to: next.to, insert: replacement });
            next = query.nextMatch(state, next.from, next.to);
-           announce.push(EditorView.announce.of(state.phrase("replaced match on line $", state.doc.lineAt(from).number) + "."));
+           effects.push(EditorView.announce.of(state.phrase("replaced match on line $", state.doc.lineAt(from).number) + "."));
        }
        if (next) {
            let off = changes.length == 0 || changes[0].from >= next.to ? 0 : next.to - next.from - replacement.length;
-           selection = { anchor: next.from - off, head: next.to - off };
-           announce.push(announceMatch(view, next));
+           selection = EditorSelection.single(next.from - off, next.to - off);
+           effects.push(announceMatch(view, next));
+           effects.push(state.facet(searchConfigFacet).scrollToMatch(selection.main, view));
        }
        view.dispatch({
-           changes, selection,
-           scrollIntoView: !!selection,
-           effects: announce,
+           changes, selection, effects,
            userEvent: "input.replace"
        });
        return true;
@@ -19615,7 +20269,7 @@
        return view.state.facet(searchConfigFacet).createPanel(view);
    }
    function defaultQuery(state, fallback) {
-       var _a, _b, _c, _d;
+       var _a, _b, _c, _d, _e;
        let sel = state.selection.main;
        let selText = sel.empty || sel.to > sel.from + 100 ? "" : state.sliceDoc(sel.from, sel.to);
        if (fallback && !selText)
@@ -19625,8 +20279,18 @@
            search: ((_a = fallback === null || fallback === void 0 ? void 0 : fallback.literal) !== null && _a !== void 0 ? _a : config.literal) ? selText : selText.replace(/\n/g, "\\n"),
            caseSensitive: (_b = fallback === null || fallback === void 0 ? void 0 : fallback.caseSensitive) !== null && _b !== void 0 ? _b : config.caseSensitive,
            literal: (_c = fallback === null || fallback === void 0 ? void 0 : fallback.literal) !== null && _c !== void 0 ? _c : config.literal,
-           wholeWord: (_d = fallback === null || fallback === void 0 ? void 0 : fallback.wholeWord) !== null && _d !== void 0 ? _d : config.wholeWord
+           regexp: (_d = fallback === null || fallback === void 0 ? void 0 : fallback.regexp) !== null && _d !== void 0 ? _d : config.regexp,
+           wholeWord: (_e = fallback === null || fallback === void 0 ? void 0 : fallback.wholeWord) !== null && _e !== void 0 ? _e : config.wholeWord
        });
+   }
+   function getSearchInput(view) {
+       let panel = getPanel(view, createSearchPanel);
+       return panel && panel.dom.querySelector("[main-field]");
+   }
+   function selectSearchInput(view) {
+       let input = getSearchInput(view);
+       if (input && input == view.root.activeElement)
+           input.select();
    }
    /**
    Make sure the search panel is open and focused.
@@ -19634,10 +20298,7 @@
    const openSearchPanel = view => {
        let state = view.state.field(searchState, false);
        if (state && state.panel) {
-           let panel = getPanel(view, createSearchPanel);
-           if (!panel)
-               return false;
-           let searchInput = panel.dom.querySelector("[main-field]");
+           let searchInput = getSearchInput(view);
            if (searchInput && searchInput != view.root.activeElement) {
                let query = defaultQuery(view.state, state.query.spec);
                if (query.valid)
@@ -19969,20 +20630,24 @@
    */
    function ifNotIn(nodes, source) {
        return (context) => {
-           for (let pos = syntaxTree(context.state).resolveInner(context.pos, -1); pos; pos = pos.parent)
+           for (let pos = syntaxTree(context.state).resolveInner(context.pos, -1); pos; pos = pos.parent) {
                if (nodes.indexOf(pos.name) > -1)
                    return null;
+               if (pos.type.isTop)
+                   break;
+           }
            return source(context);
        };
    }
    class Option {
-       constructor(completion, source, match) {
+       constructor(completion, source, match, score) {
            this.completion = completion;
            this.source = source;
            this.match = match;
+           this.score = score;
        }
    }
-   function cur(state) { return state.selection.main.head; }
+   function cur(state) { return state.selection.main.from; }
    // Make sure the given regexp has a $ at its end and, if `start` is
    // true, a ^ at its start.
    function ensureAnchor(expr, start) {
@@ -20004,29 +20669,16 @@
    selection range that has the same text in front of it.
    */
    function insertCompletionText(state, text, from, to) {
+       let { main } = state.selection, fromOff = from - main.from, toOff = to - main.from;
        return Object.assign(Object.assign({}, state.changeByRange(range => {
-           if (range == state.selection.main)
-               return {
-                   changes: { from: from, to: to, insert: text },
-                   range: EditorSelection.cursor(from + text.length)
-               };
-           let len = to - from;
-           if (!range.empty ||
-               len && state.sliceDoc(range.from - len, range.from) != state.sliceDoc(from, to))
+           if (range != main && from != to &&
+               state.sliceDoc(range.from + fromOff, range.from + toOff) != state.sliceDoc(from, to))
                return { range };
            return {
-               changes: { from: range.from - len, to: range.from, insert: text },
-               range: EditorSelection.cursor(range.from - len + text.length)
+               changes: { from: range.from + fromOff, to: to == main.from ? range.to : range.from + toOff, insert: text },
+               range: EditorSelection.cursor(range.from + fromOff + text.length)
            };
        })), { userEvent: "input.complete" });
-   }
-   function applyCompletion(view, option) {
-       const apply = option.completion.apply || option.completion.label;
-       let result = option.source;
-       if (typeof apply == "string")
-           view.dispatch(Object.assign(Object.assign({}, insertCompletionText(view.state, apply, result.from, result.to)), { annotations: pickedCompletion.of(option.completion) }));
-       else
-           apply(view, option.completion, result.from, result.to);
    }
    const SourceCache = /*@__PURE__*/new WeakMap();
    function asSource(source) {
@@ -20037,6 +20689,8 @@
            SourceCache.set(source, known = completeFromList(source));
        return known;
    }
+   const startCompletionEffect = /*@__PURE__*/StateEffect.define();
+   const closeCompletionEffect = /*@__PURE__*/StateEffect.define();
 
    // A pattern matcher for fuzzy completion matching. Create an instance
    // once for a pattern, and then use that to match any number of
@@ -20069,20 +20723,25 @@
        // is. See `Penalty` above.
        match(word) {
            if (this.pattern.length == 0)
-               return [0];
+               return [-100 /* NotFull */];
            if (word.length < this.pattern.length)
                return null;
            let { chars, folded, any, precise, byWord } = this;
            // For single-character queries, only match when they occur right
            // at the start
            if (chars.length == 1) {
-               let first = codePointAt(word, 0);
-               return first == chars[0] ? [0, 0, codePointSize(first)]
-                   : first == folded[0] ? [-200 /* Penalty.CaseFold */, 0, codePointSize(first)] : null;
+               let first = codePointAt(word, 0), firstSize = codePointSize(first);
+               let score = firstSize == word.length ? 0 : -100 /* NotFull */;
+               if (first == chars[0]) ;
+               else if (first == folded[0])
+                   score += -200 /* CaseFold */;
+               else
+                   return null;
+               return [score, 0, firstSize];
            }
            let direct = word.indexOf(this.pattern);
            if (direct == 0)
-               return [0, 0, this.pattern.length];
+               return [word.length == this.pattern.length ? 0 : -100 /* NotFull */, 0, this.pattern.length];
            let len = chars.length, anyTo = 0;
            if (direct < 0) {
                for (let i = 0, e = Math.min(word.length, 200); i < e && anyTo < len;) {
@@ -20106,7 +20765,7 @@
            let adjacentTo = 0, adjacentStart = -1, adjacentEnd = -1;
            let hasLower = /[a-z]/.test(word), wordAdjacent = true;
            // Go over the option's text, scanning for the various kinds of matches
-           for (let i = 0, e = Math.min(word.length, 200), prevType = 0 /* Tp.NonWord */; i < e && byWordTo < len;) {
+           for (let i = 0, e = Math.min(word.length, 200), prevType = 0 /* NonWord */; i < e && byWordTo < len;) {
                let next = codePointAt(word, i);
                if (direct < 0) {
                    if (preciseTo < len && next == chars[preciseTo])
@@ -20124,9 +20783,9 @@
                    }
                }
                let ch, type = next < 0xff
-                   ? (next >= 48 && next <= 57 || next >= 97 && next <= 122 ? 2 /* Tp.Lower */ : next >= 65 && next <= 90 ? 1 /* Tp.Upper */ : 0 /* Tp.NonWord */)
-                   : ((ch = fromCodePoint(next)) != ch.toLowerCase() ? 1 /* Tp.Upper */ : ch != ch.toUpperCase() ? 2 /* Tp.Lower */ : 0 /* Tp.NonWord */);
-               if (!i || type == 1 /* Tp.Upper */ && hasLower || prevType == 0 /* Tp.NonWord */ && type != 0 /* Tp.NonWord */) {
+                   ? (next >= 48 && next <= 57 || next >= 97 && next <= 122 ? 2 /* Lower */ : next >= 65 && next <= 90 ? 1 /* Upper */ : 0 /* NonWord */)
+                   : ((ch = fromCodePoint(next)) != ch.toLowerCase() ? 1 /* Upper */ : ch != ch.toUpperCase() ? 2 /* Lower */ : 0 /* NonWord */);
+               if (!i || type == 1 /* Upper */ && hasLower || prevType == 0 /* NonWord */ && type != 0 /* NonWord */) {
                    if (chars[byWordTo] == next || (folded[byWordTo] == next && (byWordFolded = true)))
                        byWord[byWordTo++] = i;
                    else if (byWord.length)
@@ -20136,17 +20795,17 @@
                i += codePointSize(next);
            }
            if (byWordTo == len && byWord[0] == 0 && wordAdjacent)
-               return this.result(-100 /* Penalty.ByWord */ + (byWordFolded ? -200 /* Penalty.CaseFold */ : 0), byWord, word);
+               return this.result(-100 /* ByWord */ + (byWordFolded ? -200 /* CaseFold */ : 0), byWord, word);
            if (adjacentTo == len && adjacentStart == 0)
-               return [-200 /* Penalty.CaseFold */ - word.length, 0, adjacentEnd];
+               return [-200 /* CaseFold */ - word.length + (adjacentEnd == word.length ? 0 : -100 /* NotFull */), 0, adjacentEnd];
            if (direct > -1)
-               return [-700 /* Penalty.NotStart */ - word.length, direct, direct + this.pattern.length];
+               return [-700 /* NotStart */ - word.length, direct, direct + this.pattern.length];
            if (adjacentTo == len)
-               return [-200 /* Penalty.CaseFold */ + -700 /* Penalty.NotStart */ - word.length, adjacentStart, adjacentEnd];
+               return [-200 /* CaseFold */ + -700 /* NotStart */ - word.length, adjacentStart, adjacentEnd];
            if (byWordTo == len)
-               return this.result(-100 /* Penalty.ByWord */ + (byWordFolded ? -200 /* Penalty.CaseFold */ : 0) + -700 /* Penalty.NotStart */ +
-                   (wordAdjacent ? 0 : -1100 /* Penalty.Gap */), byWord, word);
-           return chars.length == 2 ? null : this.result((any[0] ? -700 /* Penalty.NotStart */ : 0) + -200 /* Penalty.CaseFold */ + -1100 /* Penalty.Gap */, any, word);
+               return this.result(-100 /* ByWord */ + (byWordFolded ? -200 /* CaseFold */ : 0) + -700 /* NotStart */ +
+                   (wordAdjacent ? 0 : -1100 /* Gap */), byWord, word);
+           return chars.length == 2 ? null : this.result((any[0] ? -700 /* NotStart */ : 0) + -200 /* CaseFold */ + -1100 /* Gap */, any, word);
        }
        result(score, positions, word) {
            let result = [score - word.length], i = 1;
@@ -20177,6 +20836,7 @@
                aboveCursor: false,
                icons: true,
                addToOptions: [],
+               positionInfo: defaultPositionInfo,
                compareCompletions: (a, b) => a.label.localeCompare(b.label),
                interactionDelay: 75
            }, {
@@ -20191,6 +20851,36 @@
    });
    function joinClass(a, b) {
        return a ? b ? a + " " + b : a : b;
+   }
+   function defaultPositionInfo(view, list, option, info, space) {
+       let rtl = view.textDirection == Direction.RTL, left = rtl, narrow = false;
+       let side = "top", offset, maxWidth;
+       let spaceLeft = list.left - space.left, spaceRight = space.right - list.right;
+       let infoWidth = info.right - info.left, infoHeight = info.bottom - info.top;
+       if (left && spaceLeft < Math.min(infoWidth, spaceRight))
+           left = false;
+       else if (!left && spaceRight < Math.min(infoWidth, spaceLeft))
+           left = true;
+       if (infoWidth <= (left ? spaceLeft : spaceRight)) {
+           offset = Math.max(space.top, Math.min(option.top, space.bottom - infoHeight)) - list.top;
+           maxWidth = Math.min(400 /* Width */, left ? spaceLeft : spaceRight);
+       }
+       else {
+           narrow = true;
+           maxWidth = Math.min(400 /* Width */, (rtl ? list.right : space.right - list.left) - 30 /* Margin */);
+           let spaceBelow = space.bottom - list.bottom;
+           if (spaceBelow >= infoHeight || spaceBelow > list.top) { // Below the completion
+               offset = option.bottom - list.top;
+           }
+           else { // Above it
+               side = "bottom";
+               offset = list.bottom - option.top;
+           }
+       }
+       return {
+           style: `${side}: ${offset}px; max-width: ${maxWidth}px`,
+           class: "cm-completionInfo-" + (narrow ? (rtl ? "left-narrow" : "right-narrow") : left ? "left" : "right")
+       };
    }
 
    function optionContent(config) {
@@ -20252,13 +20942,15 @@
        return { from: total - (off + 1) * max, to: total - off * max };
    }
    class CompletionTooltip {
-       constructor(view, stateField) {
+       constructor(view, stateField, applyCompletion) {
            this.view = view;
            this.stateField = stateField;
+           this.applyCompletion = applyCompletion;
            this.info = null;
-           this.placeInfo = {
+           this.infoDestroy = null;
+           this.placeInfoReq = {
                read: () => this.measureInfo(),
-               write: (pos) => this.positionInfo(pos),
+               write: (pos) => this.placeInfo(pos),
                key: this
            };
            this.space = null;
@@ -20276,16 +20968,22 @@
            this.dom.addEventListener("mousedown", (e) => {
                for (let dom = e.target, match; dom && dom != this.dom; dom = dom.parentNode) {
                    if (dom.nodeName == "LI" && (match = /-(\d+)$/.exec(dom.id)) && +match[1] < options.length) {
-                       applyCompletion(view, options[+match[1]]);
+                       this.applyCompletion(view, options[+match[1]]);
                        e.preventDefault();
                        return;
                    }
                }
            });
+           this.dom.addEventListener("focusout", (e) => {
+               let state = view.state.field(this.stateField, false);
+               if (state && state.tooltip && view.state.facet(completionConfig).closeOnBlur &&
+                   e.relatedTarget != view.contentDOM)
+                   view.dispatch({ effects: closeCompletionEffect.of(null) });
+           });
            this.list = this.dom.appendChild(this.createListBox(options, cState.id, this.range));
            this.list.addEventListener("scroll", () => {
                if (this.info)
-                   this.view.requestMeasure(this.placeInfo);
+                   this.view.requestMeasure(this.placeInfoReq);
            });
        }
        mount() { this.updateSel(); }
@@ -20315,7 +21013,7 @@
        positioned(space) {
            this.space = space;
            if (this.info)
-               this.view.requestMeasure(this.placeInfo);
+               this.view.requestMeasure(this.placeInfoReq);
        }
        updateSel() {
            let cState = this.view.state.field(this.stateField), open = cState.open;
@@ -20325,43 +21023,52 @@
                this.list = this.dom.appendChild(this.createListBox(open.options, cState.id, this.range));
                this.list.addEventListener("scroll", () => {
                    if (this.info)
-                       this.view.requestMeasure(this.placeInfo);
+                       this.view.requestMeasure(this.placeInfoReq);
                });
            }
            if (this.updateSelectedOption(open.selected)) {
-               if (this.info) {
-                   this.info.remove();
-                   this.info = null;
-               }
+               this.destroyInfo();
                let { completion } = open.options[open.selected];
                let { info } = completion;
                if (!info)
                    return;
-               let infoResult = typeof info === 'string' ? document.createTextNode(info) : info(completion);
+               let infoResult = typeof info === "string" ? document.createTextNode(info) : info(completion);
                if (!infoResult)
                    return;
-               if ('then' in infoResult) {
-                   infoResult.then(node => {
-                       if (node && this.view.state.field(this.stateField, false) == cState)
-                           this.addInfoPane(node);
+               if ("then" in infoResult) {
+                   infoResult.then(obj => {
+                       if (obj && this.view.state.field(this.stateField, false) == cState)
+                           this.addInfoPane(obj, completion);
                    }).catch(e => logException(this.view.state, e, "completion info"));
                }
                else {
-                   this.addInfoPane(infoResult);
+                   this.addInfoPane(infoResult, completion);
                }
            }
        }
-       addInfoPane(content) {
-           let dom = this.info = document.createElement("div");
-           dom.className = "cm-tooltip cm-completionInfo";
-           dom.appendChild(content);
-           this.dom.appendChild(dom);
-           this.view.requestMeasure(this.placeInfo);
+       addInfoPane(content, completion) {
+           this.destroyInfo();
+           let wrap = this.info = document.createElement("div");
+           wrap.className = "cm-tooltip cm-completionInfo";
+           if (content.nodeType != null) {
+               wrap.appendChild(content);
+               this.infoDestroy = null;
+           }
+           else {
+               let { dom, destroy } = content;
+               wrap.appendChild(dom);
+               this.infoDestroy = destroy || null;
+           }
+           this.dom.appendChild(wrap);
+           this.view.requestMeasure(this.placeInfoReq);
        }
        updateSelectedOption(selected) {
            let set = null;
            for (let opt = this.list.firstChild, i = this.range.from; opt; opt = opt.nextSibling, i++) {
-               if (i == selected) {
+               if (opt.nodeName != "LI" || !opt.id) {
+                   i--; // A section header
+               }
+               else if (i == selected) {
                    if (!opt.hasAttribute("aria-selected")) {
                        opt.setAttribute("aria-selected", "true");
                        set = opt;
@@ -20391,41 +21098,17 @@
            if (selRect.top > Math.min(space.bottom, listRect.bottom) - 10 ||
                selRect.bottom < Math.max(space.top, listRect.top) + 10)
                return null;
-           let rtl = this.view.textDirection == Direction.RTL, left = rtl, narrow = false, maxWidth;
-           let top = "", bottom = "";
-           let spaceLeft = listRect.left - space.left, spaceRight = space.right - listRect.right;
-           if (left && spaceLeft < Math.min(infoRect.width, spaceRight))
-               left = false;
-           else if (!left && spaceRight < Math.min(infoRect.width, spaceLeft))
-               left = true;
-           if (infoRect.width <= (left ? spaceLeft : spaceRight)) {
-               top = (Math.max(space.top, Math.min(selRect.top, space.bottom - infoRect.height)) - listRect.top) + "px";
-               maxWidth = Math.min(400 /* Info.Width */, left ? spaceLeft : spaceRight) + "px";
-           }
-           else {
-               narrow = true;
-               maxWidth = Math.min(400 /* Info.Width */, (rtl ? listRect.right : space.right - listRect.left) - 30 /* Info.Margin */) + "px";
-               let spaceBelow = space.bottom - listRect.bottom;
-               if (spaceBelow >= infoRect.height || spaceBelow > listRect.top) // Below the completion
-                   top = (selRect.bottom - listRect.top) + "px";
-               else // Above it
-                   bottom = (listRect.bottom - selRect.top) + "px";
-           }
-           return {
-               top, bottom, maxWidth,
-               class: narrow ? (rtl ? "left-narrow" : "right-narrow") : left ? "left" : "right",
-           };
+           return this.view.state.facet(completionConfig).positionInfo(this.view, listRect, selRect, infoRect, space);
        }
-       positionInfo(pos) {
+       placeInfo(pos) {
            if (this.info) {
                if (pos) {
-                   this.info.style.top = pos.top;
-                   this.info.style.bottom = pos.bottom;
-                   this.info.style.maxWidth = pos.maxWidth;
-                   this.info.className = "cm-tooltip cm-completionInfo cm-completionInfo-" + pos.class;
+                   if (pos.style)
+                       this.info.style.cssText = pos.style;
+                   this.info.className = "cm-tooltip cm-completionInfo " + (pos.class || "");
                }
                else {
-                   this.info.style.top = "-1e6px";
+                   this.info.style.cssText = "top: -1e6px";
                }
            }
        }
@@ -20435,8 +21118,22 @@
            ul.setAttribute("role", "listbox");
            ul.setAttribute("aria-expanded", "true");
            ul.setAttribute("aria-label", this.view.state.phrase("Completions"));
+           let curSection = null;
            for (let i = range.from; i < range.to; i++) {
-               let { completion, match } = options[i];
+               let { completion, match } = options[i], { section } = completion;
+               if (section) {
+                   let name = typeof section == "string" ? section : section.name;
+                   if (name != curSection && (i > range.from || range.from == 0)) {
+                       curSection = name;
+                       if (typeof section != "string" && section.header) {
+                           ul.appendChild(section.header(section));
+                       }
+                       else {
+                           let header = ul.appendChild(document.createElement("completion-section"));
+                           header.textContent = name;
+                       }
+                   }
+               }
                const li = ul.appendChild(document.createElement("li"));
                li.id = id + "-" + i;
                li.setAttribute("role", "option");
@@ -20455,11 +21152,22 @@
                ul.classList.add("cm-completionListIncompleteBottom");
            return ul;
        }
+       destroyInfo() {
+           if (this.info) {
+               if (this.infoDestroy)
+                   this.infoDestroy();
+               this.info.remove();
+               this.info = null;
+           }
+       }
+       destroy() {
+           this.destroyInfo();
+       }
    }
    // We allocate a new function instance every time the completion
    // changes to force redrawing/repositioning of the tooltip
-   function completionTooltip(stateField) {
-       return (view) => new CompletionTooltip(view, stateField);
+   function completionTooltip(stateField, applyCompletion) {
+       return (view) => new CompletionTooltip(view, stateField, applyCompletion);
    }
    function scrollIntoView(container, element) {
        let parent = container.getBoundingClientRect();
@@ -20477,35 +21185,59 @@
            (option.type ? 1 : 0);
    }
    function sortOptions(active, state) {
-       let options = [], i = 0;
+       let options = [];
+       let sections = null;
+       let addOption = (option) => {
+           options.push(option);
+           let { section } = option.completion;
+           if (section) {
+               if (!sections)
+                   sections = [];
+               let name = typeof section == "string" ? section : section.name;
+               if (!sections.some(s => s.name == name))
+                   sections.push(typeof section == "string" ? { name } : section);
+           }
+       };
        for (let a of active)
            if (a.hasResult()) {
                if (a.result.filter === false) {
                    let getMatch = a.result.getMatch;
                    for (let option of a.result.options) {
-                       let match = [1e9 - i++];
+                       let match = [1e9 - options.length];
                        if (getMatch)
                            for (let n of getMatch(option))
                                match.push(n);
-                       options.push(new Option(option, a, match));
+                       addOption(new Option(option, a.source, match, match[0]));
                    }
                }
                else {
                    let matcher = new FuzzyMatcher(state.sliceDoc(a.from, a.to)), match;
                    for (let option of a.result.options)
                        if (match = matcher.match(option.label)) {
-                           if (option.boost != null)
-                               match[0] += option.boost;
-                           options.push(new Option(option, a, match));
+                           addOption(new Option(option, a.source, match, match[0] + (option.boost || 0)));
                        }
                }
            }
+       if (sections) {
+           let sectionOrder = Object.create(null), pos = 0;
+           let cmp = (a, b) => { var _a, _b; return ((_a = a.rank) !== null && _a !== void 0 ? _a : 1e9) - ((_b = b.rank) !== null && _b !== void 0 ? _b : 1e9) || (a.name < b.name ? -1 : 1); };
+           for (let s of sections.sort(cmp)) {
+               pos -= 1e5;
+               sectionOrder[s.name] = pos;
+           }
+           for (let option of options) {
+               let { section } = option.completion;
+               if (section)
+                   option.score += sectionOrder[typeof section == "string" ? section : section.name];
+           }
+       }
        let result = [], prev = null;
        let compare = state.facet(completionConfig).compareCompletions;
-       for (let opt of options.sort((a, b) => (b.match[0] - a.match[0]) || compare(a.completion, b.completion))) {
-           if (!prev || prev.label != opt.completion.label || prev.detail != opt.completion.detail ||
-               (prev.type != null && opt.completion.type != null && prev.type != opt.completion.type) ||
-               prev.apply != opt.completion.apply)
+       for (let opt of options.sort((a, b) => (b.score - a.score) || compare(a.completion, b.completion))) {
+           let cur = opt.completion;
+           if (!prev || prev.label != cur.label || prev.detail != cur.detail ||
+               (prev.type != null && cur.type != null && prev.type != cur.type) ||
+               prev.apply != cur.apply || prev.boost != cur.boost)
                result.push(opt);
            else if (score(opt.completion) > score(prev))
                result[result.length - 1] = opt;
@@ -20529,7 +21261,7 @@
        static build(active, state, id, prev, conf) {
            let options = sortOptions(active, state);
            if (!options.length) {
-               return prev && active.some(a => a.state == 1 /* State.Pending */) ?
+               return prev && active.some(a => a.state == 1 /* Pending */) ?
                    new CompletionDialog(prev.options, prev.attrs, prev.tooltip, prev.timestamp, prev.selected, true) : null;
            }
            let selected = state.facet(completionConfig).selectOnOpen ? 0 : -1;
@@ -20543,7 +21275,7 @@
            }
            return new CompletionDialog(options, makeAttrs(id, selected), {
                pos: active.reduce((a, b) => b.hasResult() ? Math.min(a, b.from) : a, 1e8),
-               create: completionTooltip(completionState),
+               create: completionTooltip(completionState, applyCompletion),
                above: conf.aboveCursor,
            }, prev ? prev.timestamp : Date.now(), selected, false);
        }
@@ -20566,7 +21298,7 @@
                state.languageDataAt("autocomplete", cur(state)).map(asSource);
            let active = sources.map(source => {
                let value = this.active.find(s => s.source == source) ||
-                   new ActiveSource(source, this.active.some(a => a.state != 0 /* State.Inactive */) ? 1 /* State.Pending */ : 0 /* State.Inactive */);
+                   new ActiveSource(source, this.active.some(a => a.state != 0 /* Inactive */) ? 1 /* Pending */ : 0 /* Inactive */);
                return value.update(tr, conf);
            });
            if (active.length == this.active.length && active.every((a, i) => a == this.active[i]))
@@ -20577,10 +21309,10 @@
            if (tr.selection || active.some(a => a.hasResult() && tr.changes.touchesRange(a.from, a.to)) ||
                !sameResults(active, this.active))
                open = CompletionDialog.build(active, state, this.id, open, conf);
-           else if (open && open.disabled && !active.some(a => a.state == 1 /* State.Pending */))
+           else if (open && open.disabled && !active.some(a => a.state == 1 /* Pending */))
                open = null;
-           if (!open && active.every(a => a.state != 1 /* State.Pending */) && active.some(a => a.hasResult()))
-               active = active.map(a => a.hasResult() ? new ActiveSource(a.source, 0 /* State.Inactive */) : a);
+           if (!open && active.every(a => a.state != 1 /* Pending */) && active.some(a => a.hasResult()))
+               active = active.map(a => a.hasResult() ? new ActiveSource(a.source, 0 /* Inactive */) : a);
            for (let effect of tr.effects)
                if (effect.is(setSelectedEffect))
                    open = open && open.setSelected(effect.value, this.id);
@@ -20634,13 +21366,13 @@
                value = value.handleUserEvent(tr, event, conf);
            else if (tr.docChanged)
                value = value.handleChange(tr);
-           else if (tr.selection && value.state != 0 /* State.Inactive */)
-               value = new ActiveSource(value.source, 0 /* State.Inactive */);
+           else if (tr.selection && value.state != 0 /* Inactive */)
+               value = new ActiveSource(value.source, 0 /* Inactive */);
            for (let effect of tr.effects) {
                if (effect.is(startCompletionEffect))
-                   value = new ActiveSource(value.source, 1 /* State.Pending */, effect.value ? cur(tr.state) : -1);
+                   value = new ActiveSource(value.source, 1 /* Pending */, effect.value ? cur(tr.state) : -1);
                else if (effect.is(closeCompletionEffect))
-                   value = new ActiveSource(value.source, 0 /* State.Inactive */);
+                   value = new ActiveSource(value.source, 0 /* Inactive */);
                else if (effect.is(setActiveEffect))
                    for (let active of effect.value)
                        if (active.source == value.source)
@@ -20649,10 +21381,10 @@
            return value;
        }
        handleUserEvent(tr, type, conf) {
-           return type == "delete" || !conf.activateOnTyping ? this.map(tr.changes) : new ActiveSource(this.source, 1 /* State.Pending */);
+           return type == "delete" || !conf.activateOnTyping ? this.map(tr.changes) : new ActiveSource(this.source, 1 /* Pending */);
        }
        handleChange(tr) {
-           return tr.changes.touchesRange(cur(tr.startState)) ? new ActiveSource(this.source, 0 /* State.Inactive */) : this.map(tr.changes);
+           return tr.changes.touchesRange(cur(tr.startState)) ? new ActiveSource(this.source, 0 /* Inactive */) : this.map(tr.changes);
        }
        map(changes) {
            return changes.empty || this.explicitPos < 0 ? this : new ActiveSource(this.source, this.state, changes.mapPos(this.explicitPos));
@@ -20660,7 +21392,7 @@
    }
    class ActiveResult extends ActiveSource {
        constructor(source, explicitPos, result, from, to) {
-           super(source, 2 /* State.Result */, explicitPos);
+           super(source, 2 /* Result */, explicitPos);
            this.result = result;
            this.from = from;
            this.to = to;
@@ -20673,17 +21405,17 @@
            if ((this.explicitPos < 0 ? pos <= from : pos < this.from) ||
                pos > to ||
                type == "delete" && cur(tr.startState) == this.from)
-               return new ActiveSource(this.source, type == "input" && conf.activateOnTyping ? 1 /* State.Pending */ : 0 /* State.Inactive */);
+               return new ActiveSource(this.source, type == "input" && conf.activateOnTyping ? 1 /* Pending */ : 0 /* Inactive */);
            let explicitPos = this.explicitPos < 0 ? -1 : tr.changes.mapPos(this.explicitPos), updated;
            if (checkValid(this.result.validFor, tr.state, from, to))
                return new ActiveResult(this.source, explicitPos, this.result, from, to);
            if (this.result.update &&
                (updated = this.result.update(this.result, from, to, new CompletionContext(tr.state, pos, explicitPos >= 0))))
                return new ActiveResult(this.source, explicitPos, updated, updated.from, (_a = updated.to) !== null && _a !== void 0 ? _a : cur(tr.state));
-           return new ActiveSource(this.source, 1 /* State.Pending */, explicitPos);
+           return new ActiveSource(this.source, 1 /* Pending */, explicitPos);
        }
        handleChange(tr) {
-           return tr.changes.touchesRange(this.from, this.to) ? new ActiveSource(this.source, 0 /* State.Inactive */) : this.map(tr.changes);
+           return tr.changes.touchesRange(this.from, this.to) ? new ActiveSource(this.source, 0 /* Inactive */) : this.map(tr.changes);
        }
        map(mapping) {
            return mapping.empty ? this :
@@ -20696,8 +21428,6 @@
        let text = state.sliceDoc(from, to);
        return typeof validFor == "function" ? validFor(text, from, to, state) : ensureAnchor(validFor, true).test(text);
    }
-   const startCompletionEffect = /*@__PURE__*/StateEffect.define();
-   const closeCompletionEffect = /*@__PURE__*/StateEffect.define();
    const setActiveEffect = /*@__PURE__*/StateEffect.define({
        map(sources, mapping) { return sources.map(s => s.map(mapping)); }
    });
@@ -20710,6 +21440,17 @@
            EditorView.contentAttributes.from(f, state => state.attrs)
        ]
    });
+   function applyCompletion(view, option) {
+       const apply = option.completion.apply || option.completion.label;
+       let result = view.state.field(completionState).active.find(a => a.source == option.source);
+       if (!(result instanceof ActiveResult))
+           return false;
+       if (typeof apply == "string")
+           view.dispatch(Object.assign(Object.assign({}, insertCompletionText(view.state, apply, result.from, result.to)), { annotations: pickedCompletion.of(option.completion) }));
+       else
+           apply(view, option.completion, result.from, result.to);
+       return true;
+   }
 
    /**
    Returns a command that moves the completion selection forward or
@@ -20740,12 +21481,10 @@
    */
    const acceptCompletion = (view) => {
        let cState = view.state.field(completionState, false);
-       if (view.state.readOnly || !cState || !cState.open || cState.open.selected < 0 ||
+       if (view.state.readOnly || !cState || !cState.open || cState.open.selected < 0 || cState.open.disabled ||
            Date.now() - cState.open.timestamp < view.state.facet(completionConfig).interactionDelay)
            return false;
-       if (!cState.open.disabled)
-           applyCompletion(view, cState.open.options[cState.open.selected]);
-       return true;
+       return applyCompletion(view, cState.open.options[cState.open.selected]);
    };
    /**
    Explicitly start autocompletion.
@@ -20762,7 +21501,7 @@
    */
    const closeCompletion = (view) => {
        let cState = view.state.field(completionState, false);
-       if (!cState || !cState.active.some(a => a.state != 0 /* State.Inactive */))
+       if (!cState || !cState.active.some(a => a.state != 0 /* Inactive */))
            return false;
        view.dispatch({ effects: closeCompletionEffect.of(null) });
        return true;
@@ -20785,9 +21524,9 @@
            this.debounceUpdate = -1;
            this.running = [];
            this.debounceAccept = -1;
-           this.composing = 0 /* CompositionState.None */;
+           this.composing = 0 /* None */;
            for (let active of view.state.field(completionState).active)
-               if (active.state == 1 /* State.Pending */)
+               if (active.state == 1 /* Pending */)
                    this.startQuery(active);
        }
        update(update) {
@@ -20818,21 +21557,21 @@
            }
            if (this.debounceUpdate > -1)
                clearTimeout(this.debounceUpdate);
-           this.debounceUpdate = cState.active.some(a => a.state == 1 /* State.Pending */ && !this.running.some(q => q.active.source == a.source))
+           this.debounceUpdate = cState.active.some(a => a.state == 1 /* Pending */ && !this.running.some(q => q.active.source == a.source))
                ? setTimeout(() => this.startUpdate(), DebounceTime) : -1;
-           if (this.composing != 0 /* CompositionState.None */)
+           if (this.composing != 0 /* None */)
                for (let tr of update.transactions) {
                    if (getUserEvent(tr) == "input")
-                       this.composing = 2 /* CompositionState.Changed */;
-                   else if (this.composing == 2 /* CompositionState.Changed */ && tr.selection)
-                       this.composing = 3 /* CompositionState.ChangedAndMoved */;
+                       this.composing = 2 /* Changed */;
+                   else if (this.composing == 2 /* Changed */ && tr.selection)
+                       this.composing = 3 /* ChangedAndMoved */;
                }
        }
        startUpdate() {
            this.debounceUpdate = -1;
            let { state } = this.view, cState = state.field(completionState);
            for (let active of cState.active) {
-               if (active.state == 1 /* State.Pending */ && !this.running.some(r => r.active.source == active.source))
+               if (active.state == 1 /* Pending */ && !this.running.some(r => r.active.source == active.source))
                    this.startQuery(active);
            }
        }
@@ -20883,14 +21622,14 @@
                    }
                }
                let current = this.view.state.field(completionState).active.find(a => a.source == query.active.source);
-               if (current && current.state == 1 /* State.Pending */) {
+               if (current && current.state == 1 /* Pending */) {
                    if (query.done == null) {
                        // Explicitly failed. Should clear the pending status if it
                        // hasn't been re-set in the meantime.
-                       let active = new ActiveSource(query.active.source, 0 /* State.Inactive */);
+                       let active = new ActiveSource(query.active.source, 0 /* Inactive */);
                        for (let tr of query.updates)
                            active = active.update(tr, conf);
-                       if (active.state != 1 /* State.Pending */)
+                       if (active.state != 1 /* Pending */)
                            updated.push(active);
                    }
                    else {
@@ -20904,21 +21643,24 @@
        }
    }, {
        eventHandlers: {
-           blur() {
+           blur(event) {
                let state = this.view.state.field(completionState, false);
-               if (state && state.tooltip && this.view.state.facet(completionConfig).closeOnBlur)
-                   this.view.dispatch({ effects: closeCompletionEffect.of(null) });
+               if (state && state.tooltip && this.view.state.facet(completionConfig).closeOnBlur) {
+                   let dialog = state.open && getTooltip(this.view, state.open.tooltip);
+                   if (!dialog || !dialog.dom.contains(event.relatedTarget))
+                       this.view.dispatch({ effects: closeCompletionEffect.of(null) });
+               }
            },
            compositionstart() {
-               this.composing = 1 /* CompositionState.Started */;
+               this.composing = 1 /* Started */;
            },
            compositionend() {
-               if (this.composing == 3 /* CompositionState.ChangedAndMoved */) {
+               if (this.composing == 3 /* ChangedAndMoved */) {
                    // Safari fires compositionend events synchronously, possibly
                    // from inside an update, so dispatch asynchronously to avoid reentrancy
                    setTimeout(() => this.view.dispatch({ effects: startCompletionEffect.of(false) }), 20);
                }
-               this.composing = 0 /* CompositionState.None */;
+               this.composing = 0 /* None */;
            }
        }
    });
@@ -20937,13 +21679,21 @@
                listStyle: "none",
                margin: 0,
                padding: 0,
-               "& > li": {
-                   overflowX: "hidden",
-                   textOverflow: "ellipsis",
-                   cursor: "pointer",
+               "& > li, & > completion-section": {
                    padding: "1px 3px",
                    lineHeight: 1.2
                },
+               "& > li": {
+                   overflowX: "hidden",
+                   textOverflow: "ellipsis",
+                   cursor: "pointer"
+               },
+               "& > completion-section": {
+                   display: "list-item",
+                   borderBottom: "1px solid silver",
+                   paddingLeft: "0.5em",
+                   opacity: 0.7
+               }
            }
        },
        "&light .cm-tooltip-autocomplete ul li[aria-selected]": {
@@ -20970,13 +21720,13 @@
            position: "absolute",
            padding: "3px 9px",
            width: "max-content",
-           maxWidth: `${400 /* Info.Width */}px`,
+           maxWidth: `${400 /* Width */}px`,
            boxSizing: "border-box"
        },
        ".cm-completionInfo.cm-completionInfo-left": { right: "100%" },
        ".cm-completionInfo.cm-completionInfo-right": { left: "100%" },
-       ".cm-completionInfo.cm-completionInfo-left-narrow": { right: `${30 /* Info.Margin */}px` },
-       ".cm-completionInfo.cm-completionInfo-right-narrow": { left: `${30 /* Info.Margin */}px` },
+       ".cm-completionInfo.cm-completionInfo-left-narrow": { right: `${30 /* Margin */}px` },
+       ".cm-completionInfo.cm-completionInfo-right-narrow": { left: `${30 /* Margin */}px` },
        "&light .cm-snippetField": { backgroundColor: "#00000022" },
        "&dark .cm-snippetField": { backgroundColor: "#ffffff22" },
        ".cm-snippetFieldPosition": {
@@ -21201,11 +21951,12 @@
    */
    function snippet(template) {
        let snippet = Snippet.parse(template);
-       return (editor, _completion, from, to) => {
+       return (editor, completion, from, to) => {
            let { text, ranges } = snippet.instantiate(editor.state, from);
            let spec = {
                changes: { from, to, insert: Text.of(text) },
-               scrollIntoView: true
+               scrollIntoView: true,
+               annotations: completion ? pickedCompletion.of(completion) : undefined
            };
            if (ranges.length)
                spec.selection = fieldSelection(ranges, 0);
@@ -21299,9 +22050,6 @@
            return mapped == null ? undefined : mapped;
        }
    });
-   const skipBracketEffect = /*@__PURE__*/StateEffect.define({
-       map(value, mapping) { return mapping.mapPos(value); }
-   });
    const closedBracket = /*@__PURE__*/new class extends RangeValue {
    };
    closedBracket.startSide = 1;
@@ -21316,12 +22064,9 @@
                    value = RangeSet.empty;
            }
            value = value.map(tr.changes);
-           for (let effect of tr.effects) {
+           for (let effect of tr.effects)
                if (effect.is(closeBracketEffect))
                    value = value.update({ add: [closedBracket.range(effect.value, effect.value + 1)] });
-               else if (effect.is(skipBracketEffect))
-                   value = value.update({ filter: from => from != effect.value });
-           }
            return value;
        }
    });
@@ -21449,15 +22194,15 @@
        });
    }
    function handleClose(state, _open, close) {
-       let dont = null, moved = state.selection.ranges.map(range => {
+       let dont = null, changes = state.changeByRange(range => {
            if (range.empty && nextChar(state.doc, range.head) == close)
-               return EditorSelection.cursor(range.head + close.length);
-           return dont = range;
+               return { changes: { from: range.head, to: range.head + close.length, insert: close },
+                   range: EditorSelection.cursor(range.head + close.length) };
+           return dont = { range };
        });
-       return dont ? null : state.update({
-           selection: EditorSelection.create(moved, state.selection.mainIndex),
+       return dont ? null : state.update(changes, {
            scrollIntoView: true,
-           effects: state.selection.ranges.map(({ from }) => skipBracketEffect.of(from))
+           userEvent: "input.type"
        });
    }
    // Handles cases where the open and close token are the same, and
@@ -21478,8 +22223,9 @@
                }
                else if (closedBracketAt(state, pos)) {
                    let isTriple = allowTriple && state.sliceDoc(pos, pos + token.length * 3) == token + token + token;
-                   return { range: EditorSelection.cursor(pos + token.length * (isTriple ? 3 : 1)),
-                       effects: skipBracketEffect.of(pos) };
+                   let content = isTriple ? token + token + token : token;
+                   return { changes: { from: pos, to: pos + content.length, insert: content },
+                       range: EditorSelection.cursor(pos + content.length) };
                }
            }
            else if (allowTriple && state.sliceDoc(pos - 2 * token.length, pos) == token + token &&
@@ -21619,30 +22365,11 @@
        return found;
    }
    function hideTooltip(tr, tooltip) {
-       return !!(tr.effects.some(e => e.is(setDiagnosticsEffect)) || tr.changes.touchesRange(tooltip.pos));
+       let line = tr.startState.doc.lineAt(tooltip.pos);
+       return !!(tr.effects.some(e => e.is(setDiagnosticsEffect)) || tr.changes.touchesRange(line.from, line.to));
    }
    function maybeEnableLint(state, effects) {
-       return state.field(lintState, false) ? effects : effects.concat(StateEffect.appendConfig.of([
-           lintState,
-           EditorView.decorations.compute([lintState], state => {
-               let { selected, panel } = state.field(lintState);
-               return !selected || !panel || selected.from == selected.to ? Decoration.none : Decoration.set([
-                   activeMark.range(selected.from, selected.to)
-               ]);
-           }),
-           hoverTooltip(lintTooltip, { hideOn: hideTooltip }),
-           baseTheme
-       ]));
-   }
-   /**
-   Returns a transaction spec which updates the current set of
-   diagnostics, and enables the lint extension if if wasn't already
-   active.
-   */
-   function setDiagnostics(state, diagnostics) {
-       return {
-           effects: maybeEnableLint(state, [setDiagnosticsEffect.of(diagnostics)])
-       };
+       return state.field(lintState, false) ? effects : effects.concat(StateEffect.appendConfig.of(lintExtensions));
    }
    /**
    The state effect that updates the set of active diagnostics. Can
@@ -21757,60 +22484,17 @@
        { key: "Mod-Shift-m", run: openLintPanel, preventDefault: true },
        { key: "F8", run: nextDiagnostic }
    ];
-   const lintPlugin = /*@__PURE__*/ViewPlugin.fromClass(class {
-       constructor(view) {
-           this.view = view;
-           this.timeout = -1;
-           this.set = true;
-           let { delay } = view.state.facet(lintConfig);
-           this.lintTime = Date.now() + delay;
-           this.run = this.run.bind(this);
-           this.timeout = setTimeout(this.run, delay);
-       }
-       run() {
-           let now = Date.now();
-           if (now < this.lintTime - 10) {
-               setTimeout(this.run, this.lintTime - now);
-           }
-           else {
-               this.set = false;
-               let { state } = this.view, { sources } = state.facet(lintConfig);
-               Promise.all(sources.map(source => Promise.resolve(source(this.view)))).then(annotations => {
-                   let all = annotations.reduce((a, b) => a.concat(b));
-                   if (this.view.state.doc == state.doc)
-                       this.view.dispatch(setDiagnostics(this.view.state, all));
-               }, error => { logException(this.view.state, error); });
-           }
-       }
-       update(update) {
-           let config = update.state.facet(lintConfig);
-           if (update.docChanged || config != update.startState.facet(lintConfig)) {
-               this.lintTime = Date.now() + config.delay;
-               if (!this.set) {
-                   this.set = true;
-                   this.timeout = setTimeout(this.run, config.delay);
-               }
-           }
-       }
-       force() {
-           if (this.set) {
-               this.lintTime = Date.now();
-               this.run();
-           }
-       }
-       destroy() {
-           clearTimeout(this.timeout);
-       }
-   });
    const lintConfig = /*@__PURE__*/Facet.define({
        combine(input) {
            return Object.assign({ sources: input.map(i => i.source) }, combineConfig(input.map(i => i.config), {
                delay: 750,
                markerFilter: null,
-               tooltipFilter: null
+               tooltipFilter: null,
+               needsRefresh: null
+           }, {
+               needsRefresh: (a, b) => !a ? b : !b ? a : u => a(u) || b(u)
            }));
-       },
-       enables: lintPlugin
+       }
    });
    function assignKeys(actions) {
        let assigned = [];
@@ -21831,8 +22515,11 @@
        var _a;
        let keys = inPanel ? assignKeys(diagnostic.actions) : [];
        return crelt("li", { class: "cm-diagnostic cm-diagnostic-" + diagnostic.severity }, crelt("span", { class: "cm-diagnosticText" }, diagnostic.renderMessage ? diagnostic.renderMessage() : diagnostic.message), (_a = diagnostic.actions) === null || _a === void 0 ? void 0 : _a.map((action, i) => {
-           let click = (e) => {
+           let fired = false, click = (e) => {
                e.preventDefault();
+               if (fired)
+                   return;
+               fired = true;
                let found = findDiagnostic(view.state.field(lintState).diagnostics, diagnostic);
                if (found)
                    action.apply(view, found.from, found.to);
@@ -22059,7 +22746,8 @@
            backgroundColor: "#444",
            color: "white",
            borderRadius: "3px",
-           marginLeft: "8px"
+           marginLeft: "8px",
+           cursor: "pointer"
        },
        ".cm-diagnosticSource": {
            fontSize: "70%",
@@ -22127,6 +22815,17 @@
            }
        }
    });
+   const lintExtensions = [
+       lintState,
+       /*@__PURE__*/EditorView.decorations.compute([lintState], state => {
+           let { selected, panel } = state.field(lintState);
+           return !selected || !panel || selected.from == selected.to ? Decoration.none : Decoration.set([
+               activeMark.range(selected.from, selected.to)
+           ]);
+       }),
+       /*@__PURE__*/hoverTooltip(lintTooltip, { hideOn: hideTooltip }),
+       baseTheme
+   ];
 
    // (The superfluous function calls around the list of extensions work
    // around current limitations in tree-shaking software.)
@@ -22281,7 +22980,8 @@
        // Apply a reduce action
        /// @internal
        reduce(action) {
-           let depth = action >> 19 /* ReduceDepthShift */, type = action & 65535 /* ValueMask */;
+           var _a;
+           let depth = action >> 19 /* Action.ReduceDepthShift */, type = action & 65535 /* Action.ValueMask */;
            let { parser } = this.p;
            let dPrec = parser.dynamicPrecedence(type);
            if (dPrec)
@@ -22300,15 +23000,29 @@
            // consume two extra frames (the dummy parent node for the skipped
            // expression and the state that we'll be staying in, which should
            // be moved to `this.state`).
-           let base = this.stack.length - ((depth - 1) * 3) - (action & 262144 /* StayFlag */ ? 6 : 0);
-           let start = this.stack[base - 2];
-           let bufferBase = this.stack[base - 1], count = this.bufferBase + this.buffer.length - bufferBase;
+           let base = this.stack.length - ((depth - 1) * 3) - (action & 262144 /* Action.StayFlag */ ? 6 : 0);
+           let start = base ? this.stack[base - 2] : this.p.ranges[0].from, size = this.reducePos - start;
+           // This is a kludge to try and detect overly deep left-associative
+           // trees, which will not increase the parse stack depth and thus
+           // won't be caught by the regular stack-depth limit check.
+           if (size >= 2000 /* Recover.MinBigReduction */ && !((_a = this.p.parser.nodeSet.types[type]) === null || _a === void 0 ? void 0 : _a.isAnonymous)) {
+               if (start == this.p.lastBigReductionStart) {
+                   this.p.bigReductionCount++;
+                   this.p.lastBigReductionSize = size;
+               }
+               else if (this.p.lastBigReductionSize < size) {
+                   this.p.bigReductionCount = 1;
+                   this.p.lastBigReductionStart = start;
+                   this.p.lastBigReductionSize = size;
+               }
+           }
+           let bufferBase = base ? this.stack[base - 1] : 0, count = this.bufferBase + this.buffer.length - bufferBase;
            // Store normal terms or `R -> R R` repeat reductions
-           if (type < parser.minRepeatTerm || (action & 131072 /* RepeatFlag */)) {
-               let pos = parser.stateFlag(this.state, 1 /* Skipped */) ? this.pos : this.reducePos;
+           if (type < parser.minRepeatTerm || (action & 131072 /* Action.RepeatFlag */)) {
+               let pos = parser.stateFlag(this.state, 1 /* StateFlag.Skipped */) ? this.pos : this.reducePos;
                this.storeNode(type, start, pos, count + 4, true);
            }
-           if (action & 262144 /* StayFlag */) {
+           if (action & 262144 /* Action.StayFlag */) {
                this.state = this.stack[base];
            }
            else {
@@ -22322,7 +23036,7 @@
        // Shift a value into the buffer
        /// @internal
        storeNode(term, start, end, size = 4, isReduce = false) {
-           if (term == 0 /* Err */ &&
+           if (term == 0 /* Term.Err */ &&
                (!this.stack.length || this.stack[this.stack.length - 1] < this.buffer.length + this.bufferBase)) {
                // Try to omit/merge adjacent error nodes
                let cur = this, top = this.buffer.length;
@@ -22330,7 +23044,7 @@
                    top = cur.bufferBase - cur.parent.bufferBase;
                    cur = cur.parent;
                }
-               if (top > 0 && cur.buffer[top - 4] == 0 /* Err */ && cur.buffer[top - 1] > -1) {
+               if (top > 0 && cur.buffer[top - 4] == 0 /* Term.Err */ && cur.buffer[top - 1] > -1) {
                    if (start == end)
                        return;
                    if (cur.buffer[top - 2] >= start) {
@@ -22344,7 +23058,7 @@
            }
            else { // There may be skipped nodes that have to be moved forward
                let index = this.buffer.length;
-               if (index > 0 && this.buffer[index - 4] != 0 /* Err */)
+               if (index > 0 && this.buffer[index - 4] != 0 /* Term.Err */)
                    while (index > 0 && this.buffer[index - 2] > end) {
                        // Move this record forward
                        this.buffer[index] = this.buffer[index - 4];
@@ -22365,14 +23079,14 @@
        /// @internal
        shift(action, next, nextEnd) {
            let start = this.pos;
-           if (action & 131072 /* GotoFlag */) {
-               this.pushState(action & 65535 /* ValueMask */, this.pos);
+           if (action & 131072 /* Action.GotoFlag */) {
+               this.pushState(action & 65535 /* Action.ValueMask */, this.pos);
            }
-           else if ((action & 262144 /* StayFlag */) == 0) { // Regular shift
+           else if ((action & 262144 /* Action.StayFlag */) == 0) { // Regular shift
                let nextState = action, { parser } = this.p;
                if (nextEnd > this.pos || next <= parser.maxNode) {
                    this.pos = nextEnd;
-                   if (!parser.stateFlag(nextState, 1 /* Skipped */))
+                   if (!parser.stateFlag(nextState, 1 /* StateFlag.Skipped */))
                        this.reducePos = nextEnd;
                }
                this.pushState(nextState, start);
@@ -22390,7 +23104,7 @@
        // Apply an action
        /// @internal
        apply(action, next, nextEnd) {
-           if (action & 65536 /* ReduceFlag */)
+           if (action & 65536 /* Action.ReduceFlag */)
                this.reduce(action);
            else
                this.shift(action, next, nextEnd);
@@ -22435,9 +23149,9 @@
            let isNode = next <= this.p.parser.maxNode;
            if (isNode)
                this.storeNode(next, this.pos, nextEnd, 4);
-           this.storeNode(0 /* Err */, this.pos, nextEnd, isNode ? 8 : 4);
+           this.storeNode(0 /* Term.Err */, this.pos, nextEnd, isNode ? 8 : 4);
            this.pos = this.reducePos = nextEnd;
-           this.score -= 190 /* Delete */;
+           this.score -= 190 /* Recover.Delete */;
        }
        /// Check if the given term would be able to be shifted (optionally
        /// after some reductions) on this stack. This can be useful for
@@ -22445,10 +23159,10 @@
        /// given token when it applies.
        canShift(term) {
            for (let sim = new SimulatedStack(this);;) {
-               let action = this.p.parser.stateSlot(sim.state, 4 /* DefaultReduce */) || this.p.parser.hasAction(sim.state, term);
+               let action = this.p.parser.stateSlot(sim.state, 4 /* ParseState.DefaultReduce */) || this.p.parser.hasAction(sim.state, term);
                if (action == 0)
                    return false;
-               if ((action & 65536 /* ReduceFlag */) == 0)
+               if ((action & 65536 /* Action.ReduceFlag */) == 0)
                    return true;
                sim.reduce(action);
            }
@@ -22457,17 +23171,17 @@
        // inserts some missing token or rule.
        /// @internal
        recoverByInsert(next) {
-           if (this.stack.length >= 300 /* MaxInsertStackDepth */)
+           if (this.stack.length >= 300 /* Recover.MaxInsertStackDepth */)
                return [];
            let nextStates = this.p.parser.nextStates(this.state);
-           if (nextStates.length > 4 /* MaxNext */ << 1 || this.stack.length >= 120 /* DampenInsertStackDepth */) {
+           if (nextStates.length > 4 /* Recover.MaxNext */ << 1 || this.stack.length >= 120 /* Recover.DampenInsertStackDepth */) {
                let best = [];
                for (let i = 0, s; i < nextStates.length; i += 2) {
                    if ((s = nextStates[i + 1]) != this.state && this.p.parser.hasAction(s, next))
                        best.push(nextStates[i], s);
                }
-               if (this.stack.length < 120 /* DampenInsertStackDepth */)
-                   for (let i = 0; best.length < 4 /* MaxNext */ << 1 && i < nextStates.length; i += 2) {
+               if (this.stack.length < 120 /* Recover.DampenInsertStackDepth */)
+                   for (let i = 0; best.length < 4 /* Recover.MaxNext */ << 1 && i < nextStates.length; i += 2) {
                        let s = nextStates[i + 1];
                        if (!best.some((v, i) => (i & 1) && v == s))
                            best.push(nextStates[i], s);
@@ -22475,15 +23189,15 @@
                nextStates = best;
            }
            let result = [];
-           for (let i = 0; i < nextStates.length && result.length < 4 /* MaxNext */; i += 2) {
+           for (let i = 0; i < nextStates.length && result.length < 4 /* Recover.MaxNext */; i += 2) {
                let s = nextStates[i + 1];
                if (s == this.state)
                    continue;
                let stack = this.split();
                stack.pushState(s, this.pos);
-               stack.storeNode(0 /* Err */, stack.pos, stack.pos, 4, true);
+               stack.storeNode(0 /* Term.Err */, stack.pos, stack.pos, 4, true);
                stack.shiftContext(nextStates[i], this.pos);
-               stack.score -= 200 /* Insert */;
+               stack.score -= 200 /* Recover.Insert */;
                result.push(stack);
            }
            return result;
@@ -22492,27 +23206,59 @@
        // be done.
        /// @internal
        forceReduce() {
-           let reduce = this.p.parser.stateSlot(this.state, 5 /* ForcedReduce */);
-           if ((reduce & 65536 /* ReduceFlag */) == 0)
-               return false;
            let { parser } = this.p;
+           let reduce = parser.stateSlot(this.state, 5 /* ParseState.ForcedReduce */);
+           if ((reduce & 65536 /* Action.ReduceFlag */) == 0)
+               return false;
            if (!parser.validAction(this.state, reduce)) {
-               let depth = reduce >> 19 /* ReduceDepthShift */, term = reduce & 65535 /* ValueMask */;
+               let depth = reduce >> 19 /* Action.ReduceDepthShift */, term = reduce & 65535 /* Action.ValueMask */;
                let target = this.stack.length - depth * 3;
-               if (target < 0 || parser.getGoto(this.stack[target], term, false) < 0)
-                   return false;
-               this.storeNode(0 /* Err */, this.reducePos, this.reducePos, 4, true);
-               this.score -= 100 /* Reduce */;
+               if (target < 0 || parser.getGoto(this.stack[target], term, false) < 0) {
+                   let backup = this.findForcedReduction();
+                   if (backup == null)
+                       return false;
+                   reduce = backup;
+               }
+               this.storeNode(0 /* Term.Err */, this.reducePos, this.reducePos, 4, true);
+               this.score -= 100 /* Recover.Reduce */;
            }
            this.reducePos = this.pos;
            this.reduce(reduce);
            return true;
        }
+       /// Try to scan through the automaton to find some kind of reduction
+       /// that can be applied. Used when the regular ForcedReduce field
+       /// isn't a valid action. @internal
+       findForcedReduction() {
+           let { parser } = this.p, seen = [];
+           let explore = (state, depth) => {
+               if (seen.includes(state))
+                   return;
+               seen.push(state);
+               return parser.allActions(state, (action) => {
+                   if (action & (262144 /* Action.StayFlag */ | 131072 /* Action.GotoFlag */)) ;
+                   else if (action & 65536 /* Action.ReduceFlag */) {
+                       let rDepth = (action >> 19 /* Action.ReduceDepthShift */) - depth;
+                       if (rDepth > 1) {
+                           let term = action & 65535 /* Action.ValueMask */, target = this.stack.length - rDepth * 3;
+                           if (target >= 0 && parser.getGoto(this.stack[target], term, false) >= 0)
+                               return (rDepth << 19 /* Action.ReduceDepthShift */) | 65536 /* Action.ReduceFlag */ | term;
+                       }
+                   }
+                   else {
+                       let found = explore(action, depth + 1);
+                       if (found != null)
+                           return found;
+                   }
+               });
+           };
+           return explore(this.state, 0);
+       }
        /// @internal
        forceAll() {
-           while (!this.p.parser.stateFlag(this.state, 2 /* Accepting */)) {
+           while (!this.p.parser.stateFlag(this.state, 2 /* StateFlag.Accepting */)) {
                if (!this.forceReduce()) {
-                   this.storeNode(0 /* Err */, this.pos, this.pos, 4, true);
+                   this.storeNode(0 /* Term.Err */, this.pos, this.pos, 4, true);
                    break;
                }
            }
@@ -22525,8 +23271,8 @@
            if (this.stack.length != 3)
                return false;
            let { parser } = this.p;
-           return parser.data[parser.stateSlot(this.state, 1 /* Actions */)] == 65535 /* End */ &&
-               !parser.stateSlot(this.state, 4 /* DefaultReduce */);
+           return parser.data[parser.stateSlot(this.state, 1 /* ParseState.Actions */)] == 65535 /* Seq.End */ &&
+               !parser.stateSlot(this.state, 4 /* ParseState.DefaultReduce */);
        }
        /// Restart the stack (put it back in its start state). Only safe
        /// when this.stack.length == 3 (state is directly below the top
@@ -22561,13 +23307,13 @@
        emitContext() {
            let last = this.buffer.length - 1;
            if (last < 0 || this.buffer[last] != -3)
-               this.buffer.push(this.curContext.hash, this.reducePos, this.reducePos, -3);
+               this.buffer.push(this.curContext.hash, this.pos, this.pos, -3);
        }
        /// @internal
        emitLookAhead() {
            let last = this.buffer.length - 1;
            if (last < 0 || this.buffer[last] != -4)
-               this.buffer.push(this.lookAhead, this.reducePos, this.reducePos, -4);
+               this.buffer.push(this.lookAhead, this.pos, this.pos, -4);
        }
        updateContext(context) {
            if (context != this.curContext.context) {
@@ -22607,6 +23353,7 @@
        Recover[Recover["MaxNext"] = 4] = "MaxNext";
        Recover[Recover["MaxInsertStackDepth"] = 300] = "MaxInsertStackDepth";
        Recover[Recover["DampenInsertStackDepth"] = 120] = "DampenInsertStackDepth";
+       Recover[Recover["MinBigReduction"] = 2000] = "MinBigReduction";
    })(Recover || (Recover = {}));
    // Used to cheaply run some reductions to scan ahead without mutating
    // an entire stack
@@ -22618,7 +23365,7 @@
            this.base = this.stack.length;
        }
        reduce(action) {
-           let term = action & 65535 /* ValueMask */, depth = action >> 19 /* ReduceDepthShift */;
+           let term = action & 65535 /* Action.ValueMask */, depth = action >> 19 /* Action.ReduceDepthShift */;
            if (depth == 0) {
                if (this.stack == this.start.stack)
                    this.stack = this.stack.slice();
@@ -22667,6 +23414,42 @@
        fork() {
            return new StackBufferCursor(this.stack, this.pos, this.index);
        }
+   }
+
+   // See lezer-generator/src/encode.ts for comments about the encoding
+   // used here
+   function decodeArray(input, Type = Uint16Array) {
+       if (typeof input != "string")
+           return input;
+       let array = null;
+       for (let pos = 0, out = 0; pos < input.length;) {
+           let value = 0;
+           for (;;) {
+               let next = input.charCodeAt(pos++), stop = false;
+               if (next == 126 /* Encode.BigValCode */) {
+                   value = 65535 /* Encode.BigVal */;
+                   break;
+               }
+               if (next >= 92 /* Encode.Gap2 */)
+                   next--;
+               if (next >= 34 /* Encode.Gap1 */)
+                   next--;
+               let digit = next - 32 /* Encode.Start */;
+               if (digit >= 46 /* Encode.Base */) {
+                   digit -= 46 /* Encode.Base */;
+                   stop = true;
+               }
+               value += digit;
+               if (stop)
+                   break;
+               value *= 46 /* Encode.Base */;
+           }
+           if (array)
+               array[out++] = value;
+           else
+               array = new Type(value);
+       }
+       return array;
    }
 
    class CachedToken {
@@ -22893,9 +23676,13 @@
            this.data = data;
            this.id = id;
        }
-       token(input, stack) { readToken(this.data, input, stack, this.id); }
+       token(input, stack) {
+           let { parser } = stack.p;
+           readToken(this.data, input, stack, this.id, parser.data, parser.tokenPrecTable);
+       }
    }
    TokenGroup.prototype.contextual = TokenGroup.prototype.fallback = TokenGroup.prototype.extend = false;
+   TokenGroup.prototype.fallback = TokenGroup.prototype.extend = false;
    /// `@external tokens` declarations in the grammar should resolve to
    /// an instance of this class.
    class ExternalTokenizer {
@@ -22933,8 +23720,8 @@
    // This function interprets that data, running through a stream as
    // long as new states with the a matching group mask can be reached,
    // and updating `input.token` when it matches a token.
-   function readToken(data, input, stack, group) {
-       let state = 0, groupMask = 1 << group, { parser } = stack.p, { dialect } = parser;
+   function readToken(data, input, stack, group, precTable, precOffset) {
+       let state = 0, groupMask = 1 << group, { dialect } = stack.p.parser;
        scan: for (;;) {
            if ((groupMask & data[state]) == 0)
                break;
@@ -22946,14 +23733,15 @@
                if ((data[i + 1] & groupMask) > 0) {
                    let term = data[i];
                    if (dialect.allows(term) &&
-                       (input.token.value == -1 || input.token.value == term || parser.overrides(term, input.token.value))) {
+                       (input.token.value == -1 || input.token.value == term ||
+                           overrides(term, input.token.value, precTable, precOffset))) {
                        input.acceptToken(term);
                        break;
                    }
                }
            let next = input.next, low = 0, high = data[state + 2];
            // Special case for EOF
-           if (input.next < 0 && high > low && data[accEnd + high * 3 - 3] == 65535 /* End */ && data[accEnd + high * 3 - 3] == 65535 /* End */) {
+           if (input.next < 0 && high > low && data[accEnd + high * 3 - 3] == 65535 /* Seq.End */ && data[accEnd + high * 3 - 3] == 65535 /* Seq.End */) {
                state = data[accEnd + high * 3 - 1];
                continue scan;
            }
@@ -22975,41 +23763,15 @@
            break;
        }
    }
-
-   // See lezer-generator/src/encode.ts for comments about the encoding
-   // used here
-   function decodeArray(input, Type = Uint16Array) {
-       if (typeof input != "string")
-           return input;
-       let array = null;
-       for (let pos = 0, out = 0; pos < input.length;) {
-           let value = 0;
-           for (;;) {
-               let next = input.charCodeAt(pos++), stop = false;
-               if (next == 126 /* BigValCode */) {
-                   value = 65535 /* BigVal */;
-                   break;
-               }
-               if (next >= 92 /* Gap2 */)
-                   next--;
-               if (next >= 34 /* Gap1 */)
-                   next--;
-               let digit = next - 32 /* Start */;
-               if (digit >= 46 /* Base */) {
-                   digit -= 46 /* Base */;
-                   stop = true;
-               }
-               value += digit;
-               if (stop)
-                   break;
-               value *= 46 /* Base */;
-           }
-           if (array)
-               array[out++] = value;
-           else
-               array = new Type(value);
-       }
-       return array;
+   function findOffset(data, start, term) {
+       for (let i = start, next; (next = data[i]) != 65535 /* Seq.End */; i++)
+           if (next == term)
+               return i - start;
+       return -1;
+   }
+   function overrides(token, prev, tableData, tableOffset) {
+       let iPrev = findOffset(tableData, tableOffset, prev);
+       return iPrev < 0 || findOffset(tableData, tableOffset, token) < iPrev;
    }
 
    // Environment variable used to control console output
@@ -23026,8 +23788,8 @@
            if (!(side < 0 ? cursor.childBefore(pos) : cursor.childAfter(pos)))
                for (;;) {
                    if ((side < 0 ? cursor.to < pos : cursor.from > pos) && !cursor.type.isError)
-                       return side < 0 ? Math.max(0, Math.min(cursor.to - 1, pos - 25 /* Margin */))
-                           : Math.min(tree.length, Math.max(cursor.from + 1, pos + 25 /* Margin */));
+                       return side < 0 ? Math.max(0, Math.min(cursor.to - 1, pos - 25 /* Safety.Margin */))
+                           : Math.min(tree.length, Math.max(cursor.from + 1, pos + 25 /* Safety.Margin */));
                    if (side < 0 ? cursor.prevSibling() : cursor.nextSibling())
                        break;
                    if (!cursor.parent())
@@ -23131,7 +23893,7 @@
            let actionIndex = 0;
            let main = null;
            let { parser } = stack.p, { tokenizers } = parser;
-           let mask = parser.stateSlot(stack.state, 3 /* TokenizerMask */);
+           let mask = parser.stateSlot(stack.state, 3 /* ParseState.TokenizerMask */);
            let context = stack.curContext ? stack.curContext.hash : 0;
            let lookAhead = 0;
            for (let i = 0; i < tokenizers.length; i++) {
@@ -23145,9 +23907,9 @@
                    token.mask = mask;
                    token.context = context;
                }
-               if (token.lookAhead > token.end + 25 /* Margin */)
+               if (token.lookAhead > token.end + 25 /* Safety.Margin */)
                    lookAhead = Math.max(token.lookAhead, lookAhead);
-               if (token.value != 0 /* Err */) {
+               if (token.value != 0 /* Term.Err */) {
                    let startIndex = actionIndex;
                    if (token.extended > -1)
                        actionIndex = this.addActions(stack, token.extended, token.end, actionIndex);
@@ -23178,7 +23940,7 @@
            let main = new CachedToken, { pos, p } = stack;
            main.start = pos;
            main.end = Math.min(pos + 1, p.stream.end);
-           main.value = pos == p.stream.end ? p.parser.eofTerm : 0 /* Err */;
+           main.value = pos == p.stream.end ? p.parser.eofTerm : 0 /* Term.Err */;
            return main;
        }
        updateCachedToken(token, tokenizer, stack) {
@@ -23190,7 +23952,7 @@
                    if (parser.specialized[i] == token.value) {
                        let result = parser.specializers[i](this.stream.read(token.start, token.end), stack);
                        if (result >= 0 && stack.p.parser.dialect.allows(result >> 1)) {
-                           if ((result & 1) == 0 /* Specialize */)
+                           if ((result & 1) == 0 /* Specialize.Specialize */)
                                token.value = result >> 1;
                            else
                                token.extended = result >> 1;
@@ -23199,7 +23961,7 @@
                    }
            }
            else {
-               token.value = 0 /* Err */;
+               token.value = 0 /* Term.Err */;
                token.end = this.stream.clipPos(start + 1);
            }
        }
@@ -23216,13 +23978,13 @@
        addActions(stack, token, end, index) {
            let { state } = stack, { parser } = stack.p, { data } = parser;
            for (let set = 0; set < 2; set++) {
-               for (let i = parser.stateSlot(state, set ? 2 /* Skip */ : 1 /* Actions */);; i += 3) {
-                   if (data[i] == 65535 /* End */) {
-                       if (data[i + 1] == 1 /* Next */) {
+               for (let i = parser.stateSlot(state, set ? 2 /* ParseState.Skip */ : 1 /* ParseState.Actions */);; i += 3) {
+                   if (data[i] == 65535 /* Seq.End */) {
+                       if (data[i + 1] == 1 /* Seq.Next */) {
                            i = pair(data, i + 2);
                        }
                        else {
-                           if (index == 0 && data[i + 1] == 2 /* Other */)
+                           if (index == 0 && data[i + 1] == 2 /* Seq.Other */)
                                index = this.putAction(pair(data, i + 2), token, end, index);
                            break;
                        }
@@ -23247,6 +24009,11 @@
        // on recursive traversal.
        Rec[Rec["CutDepth"] = 15000] = "CutDepth";
        Rec[Rec["CutTo"] = 9000] = "CutTo";
+       Rec[Rec["MaxLeftAssociativeReductionCount"] = 300] = "MaxLeftAssociativeReductionCount";
+       // The maximum number of non-recovering stacks to explore (to avoid
+       // getting bogged down with exponentially multiplying stacks in
+       // ambiguous content)
+       Rec[Rec["MaxStackCount"] = 12] = "MaxStackCount";
    })(Rec || (Rec = {}));
    class Parse {
        constructor(parser, input, fragments, ranges) {
@@ -23258,6 +24025,9 @@
            this.minStackPos = 0;
            this.reused = [];
            this.stoppedAt = null;
+           this.lastBigReductionStart = -1;
+           this.lastBigReductionSize = 0;
+           this.bigReductionCount = 0;
            this.stream = new InputStream(input, ranges);
            this.tokens = new TokenCache(parser, this.stream);
            this.topTerm = parser.top[1];
@@ -23280,6 +24050,18 @@
            // This will hold stacks beyond `pos`.
            let newStacks = this.stacks = [];
            let stopped, stoppedTokens;
+           // If a large amount of reductions happened with the same start
+           // position, force the stack out of that production in order to
+           // avoid creating a tree too deep to recurse through.
+           // (This is an ugly kludge, because unfortunately there is no
+           // straightforward, cheap way to check for this happening, due to
+           // the history of reductions only being available in an
+           // expensive-to-access format in the stack buffers.)
+           if (this.bigReductionCount > 300 /* Rec.MaxLeftAssociativeReductionCount */ && stacks.length == 1) {
+               let [s] = stacks;
+               while (s.forceReduce() && s.stack.length && s.stack[s.stack.length - 2] >= this.lastBigReductionStart) { }
+               this.bigReductionCount = this.lastBigReductionSize = 0;
+           }
            // Keep advancing any stacks at `pos` until they either move
            // forward or can't be advanced. Gather stacks that can't be
            // advanced further in `stopped`.
@@ -23315,7 +24097,7 @@
                    throw new SyntaxError("No parse at " + pos);
                }
                if (!this.recovering)
-                   this.recovering = 5 /* Distance */;
+                   this.recovering = 5 /* Rec.Distance */;
            }
            if (this.recovering && stopped) {
                let finished = this.stoppedAt != null && stopped[0].pos > this.stoppedAt ? stopped[0]
@@ -23324,7 +24106,7 @@
                    return this.stackToTree(finished.forceAll());
            }
            if (this.recovering) {
-               let maxRemaining = this.recovering == 1 ? 1 : this.recovering * 3 /* MaxRemainingPerStep */;
+               let maxRemaining = this.recovering == 1 ? 1 : this.recovering * 3 /* Rec.MaxRemainingPerStep */;
                if (newStacks.length > maxRemaining) {
                    newStacks.sort((a, b) => b.score - a.score);
                    while (newStacks.length > maxRemaining)
@@ -23342,7 +24124,7 @@
                    for (let j = i + 1; j < newStacks.length; j++) {
                        let other = newStacks[j];
                        if (stack.sameState(other) ||
-                           stack.buffer.length > 500 /* MinBufferLengthPrune */ && other.buffer.length > 500 /* MinBufferLengthPrune */) {
+                           stack.buffer.length > 500 /* Rec.MinBufferLengthPrune */ && other.buffer.length > 500 /* Rec.MinBufferLengthPrune */) {
                            if (((stack.score - other.score) || (stack.buffer.length - other.buffer.length)) > 0) {
                                newStacks.splice(j--, 1);
                            }
@@ -23353,6 +24135,8 @@
                        }
                    }
                }
+               if (newStacks.length > 12 /* Rec.MaxStackCount */)
+                   newStacks.splice(12 /* Rec.MaxStackCount */, newStacks.length - 12 /* Rec.MaxStackCount */);
            }
            this.minStackPos = newStacks[0].pos;
            for (let i = 1; i < newStacks.length; i++)
@@ -23393,15 +24177,15 @@
                        break;
                }
            }
-           let defaultReduce = parser.stateSlot(stack.state, 4 /* DefaultReduce */);
+           let defaultReduce = parser.stateSlot(stack.state, 4 /* ParseState.DefaultReduce */);
            if (defaultReduce > 0) {
                stack.reduce(defaultReduce);
                if (verbose)
-                   console.log(base + this.stackID(stack) + ` (via always-reduce ${parser.getName(defaultReduce & 65535 /* ValueMask */)})`);
+                   console.log(base + this.stackID(stack) + ` (via always-reduce ${parser.getName(defaultReduce & 65535 /* Action.ValueMask */)})`);
                return true;
            }
-           if (stack.stack.length >= 15000 /* CutDepth */) {
-               while (stack.stack.length > 9000 /* CutTo */ && stack.forceReduce()) { }
+           if (stack.stack.length >= 15000 /* Rec.CutDepth */) {
+               while (stack.stack.length > 9000 /* Rec.CutTo */ && stack.forceReduce()) { }
            }
            let actions = this.tokens.getActions(stack);
            for (let i = 0; i < actions.length;) {
@@ -23410,8 +24194,8 @@
                let localStack = last ? stack : stack.split();
                localStack.apply(action, term, end);
                if (verbose)
-                   console.log(base + this.stackID(localStack) + ` (via ${(action & 65536 /* ReduceFlag */) == 0 ? "shift"
-                    : `reduce of ${parser.getName(action & 65535 /* ValueMask */)}`} for ${parser.getName(term)} @ ${start}${localStack == stack ? "" : ", split"})`);
+                   console.log(base + this.stackID(localStack) + ` (via ${(action & 65536 /* Action.ReduceFlag */) == 0 ? "shift"
+                    : `reduce of ${parser.getName(action & 65535 /* Action.ValueMask */)}`} for ${parser.getName(term)} @ ${start}${localStack == stack ? "" : ", split"})`);
                if (last)
                    return true;
                else if (localStack.pos > start)
@@ -23452,7 +24236,7 @@
                        continue;
                }
                let force = stack.split(), forceBase = base;
-               for (let j = 0; force.forceReduce() && j < 10 /* ForceReduceLimit */; j++) {
+               for (let j = 0; force.forceReduce() && j < 10 /* Rec.ForceReduceLimit */; j++) {
                    if (verbose)
                        console.log(forceBase + this.stackID(force) + " (via force-reduce)");
                    let done = this.advanceFully(force, newStacks);
@@ -23469,7 +24253,7 @@
                if (this.stream.end > stack.pos) {
                    if (tokenEnd == stack.pos) {
                        tokenEnd++;
-                       token = 0 /* Err */;
+                       token = 0 /* Term.Err */;
                    }
                    stack.recoverByDelete(token, tokenEnd);
                    if (verbose)
@@ -23551,8 +24335,8 @@
            super();
            /// @internal
            this.wrappers = [];
-           if (spec.version != 14 /* Version */)
-               throw new RangeError(`Parser version (${spec.version}) doesn't match runtime version (${14 /* Version */})`);
+           if (spec.version != 14 /* File.Version */)
+               throw new RangeError(`Parser version (${spec.version}) doesn't match runtime version (${14 /* File.Version */})`);
            let nodeNames = spec.nodeNames.split(" ");
            this.minRepeatTerm = nodeNames.length;
            for (let i = 0; i < spec.repeatNodeCount; i++)
@@ -23642,16 +24426,16 @@
        hasAction(state, terminal) {
            let data = this.data;
            for (let set = 0; set < 2; set++) {
-               for (let i = this.stateSlot(state, set ? 2 /* Skip */ : 1 /* Actions */), next;; i += 3) {
-                   if ((next = data[i]) == 65535 /* End */) {
-                       if (data[i + 1] == 1 /* Next */)
+               for (let i = this.stateSlot(state, set ? 2 /* ParseState.Skip */ : 1 /* ParseState.Actions */), next;; i += 3) {
+                   if ((next = data[i]) == 65535 /* Seq.End */) {
+                       if (data[i + 1] == 1 /* Seq.Next */)
                            next = data[i = pair(data, i + 2)];
-                       else if (data[i + 1] == 2 /* Other */)
+                       else if (data[i + 1] == 2 /* Seq.Other */)
                            return pair(data, i + 2);
                        else
                            break;
                    }
-                   if (next == terminal || next == 0 /* Err */)
+                   if (next == terminal || next == 0 /* Term.Err */)
                        return pair(data, i + 1);
                }
            }
@@ -23659,50 +24443,49 @@
        }
        /// @internal
        stateSlot(state, slot) {
-           return this.states[(state * 6 /* Size */) + slot];
+           return this.states[(state * 6 /* ParseState.Size */) + slot];
        }
        /// @internal
        stateFlag(state, flag) {
-           return (this.stateSlot(state, 0 /* Flags */) & flag) > 0;
+           return (this.stateSlot(state, 0 /* ParseState.Flags */) & flag) > 0;
        }
        /// @internal
        validAction(state, action) {
-           if (action == this.stateSlot(state, 4 /* DefaultReduce */))
-               return true;
-           for (let i = this.stateSlot(state, 1 /* Actions */);; i += 3) {
-               if (this.data[i] == 65535 /* End */) {
-                   if (this.data[i + 1] == 1 /* Next */)
+           return !!this.allActions(state, a => a == action ? true : null);
+       }
+       /// @internal
+       allActions(state, action) {
+           let deflt = this.stateSlot(state, 4 /* ParseState.DefaultReduce */);
+           let result = deflt ? action(deflt) : undefined;
+           for (let i = this.stateSlot(state, 1 /* ParseState.Actions */); result == null; i += 3) {
+               if (this.data[i] == 65535 /* Seq.End */) {
+                   if (this.data[i + 1] == 1 /* Seq.Next */)
                        i = pair(this.data, i + 2);
                    else
-                       return false;
+                       break;
                }
-               if (action == pair(this.data, i + 1))
-                   return true;
+               result = action(pair(this.data, i + 1));
            }
+           return result;
        }
        /// Get the states that can follow this one through shift actions or
        /// goto jumps. @internal
        nextStates(state) {
            let result = [];
-           for (let i = this.stateSlot(state, 1 /* Actions */);; i += 3) {
-               if (this.data[i] == 65535 /* End */) {
-                   if (this.data[i + 1] == 1 /* Next */)
+           for (let i = this.stateSlot(state, 1 /* ParseState.Actions */);; i += 3) {
+               if (this.data[i] == 65535 /* Seq.End */) {
+                   if (this.data[i + 1] == 1 /* Seq.Next */)
                        i = pair(this.data, i + 2);
                    else
                        break;
                }
-               if ((this.data[i + 2] & (65536 /* ReduceFlag */ >> 16)) == 0) {
+               if ((this.data[i + 2] & (65536 /* Action.ReduceFlag */ >> 16)) == 0) {
                    let value = this.data[i + 1];
                    if (!result.some((v, i) => (i & 1) && v == value))
                        result.push(this.data[i], value);
                }
            }
            return result;
-       }
-       /// @internal
-       overrides(token, prev) {
-           let iPrev = findOffset(this.data, this.tokenPrecTable, prev);
-           return iPrev < 0 || findOffset(this.data, this.tokenPrecTable, token) < iPrev;
        }
        /// Configure the parser. Returns a new parser instance that has the
        /// given settings modified. Settings not provided in `config` are
@@ -23781,30 +24564,24 @@
            let disabled = null;
            for (let i = 0; i < values.length; i++)
                if (!flags[i]) {
-                   for (let j = this.dialects[values[i]], id; (id = this.data[j++]) != 65535 /* End */;)
+                   for (let j = this.dialects[values[i]], id; (id = this.data[j++]) != 65535 /* Seq.End */;)
                        (disabled || (disabled = new Uint8Array(this.maxTerm + 1)))[id] = 1;
                }
            return new Dialect(dialect, flags, disabled);
        }
        /// Used by the output of the parser generator. Not available to
-       /// user code.
+       /// user code. @hide
        static deserialize(spec) {
            return new LRParser(spec);
        }
    }
    function pair(data, off) { return data[off] | (data[off + 1] << 16); }
-   function findOffset(data, start, term) {
-       for (let i = start, next; (next = data[i]) != 65535 /* End */; i++)
-           if (next == term)
-               return i - start;
-       return -1;
-   }
    function findFinished(stacks) {
        let best = null;
        for (let stack of stacks) {
            let stopped = stack.p.stoppedAt;
            if ((stack.pos == stack.p.stream.end || stopped != null && stack.pos > stopped) &&
-               stack.p.parser.stateFlag(stack.state, 2 /* Accepting */) &&
+               stack.p.parser.stateFlag(stack.state, 2 /* StateFlag.Accepting */) &&
                (!best || best.score < stack.score))
                best = stack;
        }
@@ -23812,7 +24589,7 @@
    }
    function getSpecializer(spec) {
        if (spec.external) {
-           let mask = spec.extend ? 1 /* Extend */ : 0 /* Specialize */;
+           let mask = spec.extend ? 1 /* Specialize.Extend */ : 0 /* Specialize.Specialize */;
            return (value, stack) => (spec.external(value, stack) << 1) | mask;
        }
        return spec.get;
@@ -23820,62 +24597,82 @@
 
    // This file was generated by lezer-generator. You probably shouldn't edit it.
    const printKeyword = 1,
-     indent = 189,
-     dedent = 190,
-     newline$1 = 191,
-     newlineBracketed = 192,
-     newlineEmpty = 193,
-     eof = 194,
-     ParenL = 22,
-     ParenthesizedExpression = 23,
-     TupleExpression = 47,
-     ComprehensionExpression = 48,
-     BracketL = 53,
-     ArrayExpression = 54,
-     ArrayComprehensionExpression = 55,
-     BraceL = 57,
-     DictionaryExpression = 58,
-     DictionaryComprehensionExpression = 59,
-     SetExpression = 60,
-     SetComprehensionExpression = 61,
-     ArgList = 63,
-     subscript = 230,
-     FormatReplacement = 71,
-     importList = 255,
-     ParamList = 121,
-     SequencePattern = 142,
-     MappingPattern = 143,
-     PatternArgList = 146;
+     indent = 196,
+     dedent = 197,
+     newline$1 = 198,
+     blankLineStart = 199,
+     newlineBracketed = 200,
+     eof = 201,
+     formatString1Content = 202,
+     formatString1Brace = 2,
+     formatString1End = 203,
+     formatString2Content = 204,
+     formatString2Brace = 3,
+     formatString2End = 205,
+     formatString1lContent = 206,
+     formatString1lBrace = 4,
+     formatString1lEnd = 207,
+     formatString2lContent = 208,
+     formatString2lBrace = 5,
+     formatString2lEnd = 209,
+     ParenL = 26,
+     ParenthesizedExpression = 27,
+     TupleExpression = 51,
+     ComprehensionExpression = 52,
+     BracketL = 57,
+     ArrayExpression = 58,
+     ArrayComprehensionExpression = 59,
+     BraceL = 61,
+     DictionaryExpression = 62,
+     DictionaryComprehensionExpression = 63,
+     SetExpression = 64,
+     SetComprehensionExpression = 65,
+     ArgList = 67,
+     subscript = 246,
+     FormatString = 74,
+     importList = 265,
+     ParamList = 129,
+     SequencePattern = 150,
+     MappingPattern = 151,
+     PatternArgList = 154;
 
-   const newline = 10, carriageReturn = 13, space = 32, tab = 9, hash = 35, parenOpen = 40, dot = 46;
+   const newline = 10, carriageReturn = 13, space = 32, tab = 9, hash = 35, parenOpen = 40, dot = 46,
+         braceOpen = 123, singleQuote = 39, doubleQuote = 34, backslash = 92;
 
    const bracketed = new Set([
      ParenthesizedExpression, TupleExpression, ComprehensionExpression, importList, ArgList, ParamList,
      ArrayExpression, ArrayComprehensionExpression, subscript,
-     SetExpression, SetComprehensionExpression,
-     DictionaryExpression, DictionaryComprehensionExpression, FormatReplacement,
+     SetExpression, SetComprehensionExpression, FormatString,
+     DictionaryExpression, DictionaryComprehensionExpression,
      SequencePattern, MappingPattern, PatternArgList
    ]);
 
+   function isLineBreak(ch) {
+     return ch == newline || ch == carriageReturn
+   }
+
    const newlines = new ExternalTokenizer((input, stack) => {
+     let prev;
      if (input.next < 0) {
        input.acceptToken(eof);
-     } else if (input.next != newline && input.next != carriageReturn) ; else if (stack.context.depth < 0) {
-       input.acceptToken(newlineBracketed, 1);
-     } else {
-       input.advance();
+     } else if (stack.context.depth < 0) {
+       if (isLineBreak(input.next)) input.acceptToken(newlineBracketed, 1);
+     } else if (((prev = input.peek(-1)) < 0 || isLineBreak(prev)) &&
+                stack.canShift(blankLineStart)) {
        let spaces = 0;
        while (input.next == space || input.next == tab) { input.advance(); spaces++; }
-       let empty = input.next == newline || input.next == carriageReturn || input.next == hash;
-       input.acceptToken(empty ? newlineEmpty : newline$1, -spaces);
+       if (input.next == newline || input.next == carriageReturn || input.next == hash)
+         input.acceptToken(blankLineStart, -spaces);
+     } else if (isLineBreak(input.next)) {
+       input.acceptToken(newline$1, 1);
      }
-   }, {contextual: true, fallback: true});
+   }, {contextual: true});
 
    const indentation = new ExternalTokenizer((input, stack) => {
      let cDepth = stack.context.depth;
      if (cDepth < 0) return
      let prev = input.peek(-1);
-     if ((prev == newline || prev == carriageReturn) && stack.context.depth >= 0) {
+     if (prev == newline || prev == carriageReturn) {
        let depth = 0, chars = 0;
        for (;;) {
          if (input.next == space) depth++;
@@ -23937,6 +24734,44 @@
      }
    });
 
+   function formatString(quote, len, content, brace, end) {
+     return new ExternalTokenizer(input => {
+       let start = input.pos;
+       for (;;) {
+         if (input.next < 0) {
+           break
+         } else if (input.next == braceOpen) {
+           if (input.peek(1) == braceOpen) {
+             input.advance(2);
+           } else {
+             if (input.pos == start) {
+               input.acceptToken(brace, 1);
+               return
+             }
+             break
+           }
+         } else if (input.next == backslash) {
+           input.advance();
+           if (input.next >= 0) input.advance();
+         } else if (input.next == quote && (len == 1 || input.peek(1) == quote && input.peek(2) == quote)) {
+           if (input.pos == start) {
+             input.acceptToken(end, len);
+             return
+           }
+           break
+         } else {
+           input.advance();
+         }
+       }
+       if (input.pos > start) input.acceptToken(content);
+     })
+   }
+
+   const formatString1 = formatString(singleQuote, 1, formatString1Content, formatString1Brace, formatString1End);
+   const formatString2 = formatString(doubleQuote, 1, formatString2Content, formatString2Brace, formatString2End);
+   const formatString1l = formatString(singleQuote, 3, formatString1lContent, formatString1lBrace, formatString1lEnd);
+   const formatString2l = formatString(doubleQuote, 3, formatString2lContent, formatString2lBrace, formatString2lEnd);
+
    const pythonHighlighting = styleTags({
      "async \"*\" \"**\" FormatConversion FormatSpec": tags.modifier,
      "for while if elif else try except finally return raise break continue with pass assert await yield match case": tags.controlKeyword,
@@ -23957,7 +24792,7 @@
      String: tags.string,
      FormatString: tags.special(tags.string),
      UpdateOp: tags.updateOperator,
-     ArithOp: tags.arithmeticOperator,
+     "ArithOp!": tags.arithmeticOperator,
      BitOp: tags.bitwiseOperator,
      CompareOp: tags.compareOperator,
      AssignOp: tags.definitionOperator,
@@ -23971,28 +24806,28 @@
    });
 
    // This file was generated by lezer-generator. You probably shouldn't edit it.
-   const spec_identifier = {__proto__:null,await:40, or:50, and:52, in:56, not:58, is:60, if:66, else:68, lambda:72, yield:90, from:92, async:98, for:100, None:152, True:154, False:154, del:168, pass:172, break:176, continue:180, return:184, raise:192, import:196, as:198, global:202, nonlocal:204, assert:208, elif:218, while:222, try:228, except:230, finally:232, with:236, def:240, class:250, match:261, case:267};
+   const spec_identifier = {__proto__:null,await:48, or:58, and:60, in:64, not:66, is:68, if:74, else:76, lambda:80, yield:98, from:100, async:106, for:108, None:168, True:170, False:170, del:184, pass:188, break:192, continue:196, return:200, raise:208, import:212, as:214, global:218, nonlocal:220, assert:224, elif:234, while:238, try:244, except:246, finally:248, with:252, def:256, class:266, match:277, case:283};
    const parser = LRParser.deserialize({
      version: 14,
-     states: "!L`O`Q$IXOOO%fQ$I[O'#G|OOQ$IS'#Cm'#CmOOQ$IS'#Cn'#CnO'UQ$IWO'#ClO(wQ$I[O'#G{OOQ$IS'#G|'#G|OOQ$IS'#DS'#DSOOQ$IS'#G{'#G{O)eQ$IWO'#CsO)uQ$IWO'#DdO*VQ$IWO'#DhOOQ$IS'#Ds'#DsO*jO`O'#DsO*rOpO'#DsO*zO!bO'#DtO+VO#tO'#DtO+bO&jO'#DtO+mO,UO'#DtO-oQ$I[O'#GmOOQ$IS'#Gm'#GmO'UQ$IWO'#GlO/RQ$I[O'#GlOOQ$IS'#E]'#E]O/jQ$IWO'#E^OOQ$IS'#Gk'#GkO/tQ$IWO'#GjOOQ$IV'#Gj'#GjO0PQ$IWO'#FPOOQ$IS'#GX'#GXO0UQ$IWO'#FOOOQ$IV'#Hx'#HxOOQ$IV'#Gi'#GiOOQ$IT'#Fh'#FhQ`Q$IXOOO'UQ$IWO'#CoO0dQ$IWO'#C{O0kQ$IWO'#DPO0yQ$IWO'#HQO1ZQ$I[O'#EQO'UQ$IWO'#EROOQ$IS'#ET'#ETOOQ$IS'#EV'#EVOOQ$IS'#EX'#EXO1oQ$IWO'#EZO2VQ$IWO'#E_O0PQ$IWO'#EaO2jQ$I[O'#EaO0PQ$IWO'#EdO/jQ$IWO'#EgO/jQ$IWO'#EkO/jQ$IWO'#EnO2uQ$IWO'#EpO2|Q$IWO'#EuO3XQ$IWO'#EqO/jQ$IWO'#EuO0PQ$IWO'#EwO0PQ$IWO'#E|O3^Q$IWO'#FROOQ$IS'#Cc'#CcOOQ$IS'#Cd'#CdOOQ$IS'#Ce'#CeOOQ$IS'#Cf'#CfOOQ$IS'#Cg'#CgOOQ$IS'#Ch'#ChOOQ$IS'#Cj'#CjO'UQ$IWO,58|O'UQ$IWO,58|O'UQ$IWO,58|O'UQ$IWO,58|O'UQ$IWO,58|O'UQ$IWO,58|O3eQ$IWO'#DmOOQ$IS,5:W,5:WO3xQ$IWO'#H[OOQ$IS,5:Z,5:ZO4VQ%1`O,5:ZO4[Q$I[O,59WO0dQ$IWO,59`O0dQ$IWO,59`O0dQ$IWO,59`O6zQ$IWO,59`O7PQ$IWO,59`O7WQ$IWO,59hO7_Q$IWO'#G{O8eQ$IWO'#GzOOQ$IS'#Gz'#GzOOQ$IS'#DY'#DYO8|Q$IWO,59_O'UQ$IWO,59_O9[Q$IWO,59_O9aQ$IWO,5:PO'UQ$IWO,5:POOQ$IS,5:O,5:OO9oQ$IWO,5:OO9tQ$IWO,5:VO'UQ$IWO,5:VO'UQ$IWO,5:TOOQ$IS,5:S,5:SO:VQ$IWO,5:SO:[Q$IWO,5:UOOOO'#Fp'#FpO:aO`O,5:_OOQ$IS,5:_,5:_OOOO'#Fq'#FqO:iOpO,5:_O:qQ$IWO'#DuOOOO'#Fr'#FrO;RO!bO,5:`OOQ$IS,5:`,5:`OOOO'#Fu'#FuO;^O#tO,5:`OOOO'#Fv'#FvO;iO&jO,5:`OOOO'#Fw'#FwO;tO,UO,5:`OOQ$IS'#Fx'#FxO<PQ$I[O,5:dO>qQ$I[O,5=WO?[Q%GlO,5=WO?{Q$I[O,5=WOOQ$IS,5:x,5:xO@dQ$IXO'#GQOAsQ$IWO,5;TOOQ$IV,5=U,5=UOBOQ$I[O'#HtOBgQ$IWO,5;kOOQ$IS-E:V-E:VOOQ$IV,5;j,5;jO3SQ$IWO'#EwOOQ$IT-E9f-E9fOBoQ$I[O,59ZODvQ$I[O,59gOEaQ$IWO'#G}OElQ$IWO'#G}O0PQ$IWO'#G}OEwQ$IWO'#DROFPQ$IWO,59kOFUQ$IWO'#HRO'UQ$IWO'#HRO/jQ$IWO,5=lOOQ$IS,5=l,5=lO/jQ$IWO'#D|OOQ$IS'#D}'#D}OFsQ$IWO'#FzOGTQ$IWO,58zOGTQ$IWO,58zO)hQ$IWO,5:jOGcQ$I[O'#HTOOQ$IS,5:m,5:mOOQ$IS,5:u,5:uOGvQ$IWO,5:yOHXQ$IWO,5:{OOQ$IS'#F}'#F}OHgQ$I[O,5:{OHuQ$IWO,5:{OHzQ$IWO'#HwOOQ$IS,5;O,5;OOIYQ$IWO'#HsOOQ$IS,5;R,5;RO3XQ$IWO,5;VO3XQ$IWO,5;YOIkQ$I[O'#HyO'UQ$IWO'#HyOIuQ$IWO,5;[O2uQ$IWO,5;[O/jQ$IWO,5;aO0PQ$IWO,5;cOIzQ$IXO'#ElOKTQ$IZO,5;]ONiQ$IWO'#HzO3XQ$IWO,5;aONtQ$IWO,5;cONyQ$IWO,5;hO! RQ$I[O,5;mO'UQ$IWO,5;mO!#uQ$I[O1G.hO!#|Q$I[O1G.hO!&mQ$I[O1G.hO!&wQ$I[O1G.hO!)bQ$I[O1G.hO!)uQ$I[O1G.hO!*YQ$IWO'#HZO!*hQ$I[O'#GmO/jQ$IWO'#HZO!*rQ$IWO'#HYOOQ$IS,5:X,5:XO!*zQ$IWO,5:XO!+PQ$IWO'#H]O!+[Q$IWO'#H]O!+oQ$IWO,5=vOOQ$IS'#Dq'#DqOOQ$IS1G/u1G/uOOQ$IS1G.z1G.zO!,oQ$I[O1G.zO!,vQ$I[O1G.zO0dQ$IWO1G.zO!-cQ$IWO1G/SOOQ$IS'#DX'#DXO/jQ$IWO,59rOOQ$IS1G.y1G.yO!-jQ$IWO1G/cO!-zQ$IWO1G/cO!.SQ$IWO1G/dO'UQ$IWO'#HSO!.XQ$IWO'#HSO!.^Q$I[O1G.yO!.nQ$IWO,59gO!/tQ$IWO,5=rO!0UQ$IWO,5=rO!0^Q$IWO1G/kO!0cQ$I[O1G/kOOQ$IS1G/j1G/jO!0sQ$IWO,5=mO!1jQ$IWO,5=mO/jQ$IWO1G/oO!2XQ$IWO1G/qO!2^Q$I[O1G/qO!2nQ$I[O1G/oOOQ$IS1G/n1G/nOOQ$IS1G/p1G/pOOOO-E9n-E9nOOQ$IS1G/y1G/yOOOO-E9o-E9oO!3OQ$IWO'#HhO/jQ$IWO'#HhO!3^Q$IWO,5:aOOOO-E9p-E9pOOQ$IS1G/z1G/zOOOO-E9s-E9sOOOO-E9t-E9tOOOO-E9u-E9uOOQ$IS-E9v-E9vO!3iQ%GlO1G2rO!4YQ$I[O1G2rO'UQ$IWO,5<eOOQ$IS,5<e,5<eOOQ$IS-E9w-E9wOOQ$IS,5<l,5<lOOQ$IS-E:O-E:OOOQ$IV1G0o1G0oO0PQ$IWO'#F|O!4qQ$I[O,5>`OOQ$IS1G1V1G1VO!5YQ$IWO1G1VOOQ$IS'#DT'#DTO/jQ$IWO,5=iOOQ$IS,5=i,5=iO!5_Q$IWO'#FiO!5jQ$IWO,59mO!5rQ$IWO1G/VO!5|Q$I[O,5=mOOQ$IS1G3W1G3WOOQ$IS,5:h,5:hO!6mQ$IWO'#GlOOQ$IS,5<f,5<fOOQ$IS-E9x-E9xO!7OQ$IWO1G.fOOQ$IS1G0U1G0UO!7^Q$IWO,5=oO!7nQ$IWO,5=oO/jQ$IWO1G0eO/jQ$IWO1G0eO0PQ$IWO1G0gOOQ$IS-E9{-E9{O!8PQ$IWO1G0gO!8[Q$IWO1G0gO!8aQ$IWO,5>cO!8oQ$IWO,5>cO!8}Q$IWO,5>_O!9eQ$IWO,5>_O!9vQ$IZO1G0qO!=XQ$IZO1G0tO!@gQ$IWO,5>eO!@qQ$IWO,5>eO!@yQ$I[O,5>eO/jQ$IWO1G0vO!ATQ$IWO1G0vO3XQ$IWO1G0{ONtQ$IWO1G0}OOQ$IV,5;W,5;WO!AYQ$IYO,5;WO!A_Q$IZO1G0wO!DsQ$IWO'#GUO3XQ$IWO1G0wO3XQ$IWO1G0wO!EQQ$IWO,5>fO!E_Q$IWO,5>fO0PQ$IWO,5>fOOQ$IV1G0{1G0{O!EgQ$IWO'#EyO!ExQ%1`O1G0}OOQ$IV1G1S1G1SO3XQ$IWO1G1SO!FQQ$IWO'#FTOOQ$IV1G1X1G1XO! RQ$I[O1G1XOOQ$IS,5=u,5=uOOQ$IS'#Dn'#DnO/jQ$IWO,5=uO!FVQ$IWO,5=tO!FjQ$IWO,5=tOOQ$IS1G/s1G/sO!FrQ$IWO,5=wO!GSQ$IWO,5=wO!G[Q$IWO,5=wO!GoQ$IWO,5=wO!HPQ$IWO,5=wOOQ$IS1G3b1G3bOOQ$IS7+$f7+$fO!5rQ$IWO7+$nO!IrQ$IWO1G.zO!IyQ$IWO1G.zOOQ$IS1G/^1G/^OOQ$IS,5<V,5<VO'UQ$IWO,5<VOOQ$IS7+$}7+$}O!JQQ$IWO7+$}OOQ$IS-E9i-E9iOOQ$IS7+%O7+%OO!JbQ$IWO,5=nO'UQ$IWO,5=nOOQ$IS7+$e7+$eO!JgQ$IWO7+$}O!JoQ$IWO7+%OO!JtQ$IWO1G3^OOQ$IS7+%V7+%VO!KUQ$IWO1G3^O!K^Q$IWO7+%VOOQ$IS,5<U,5<UO'UQ$IWO,5<UO!KcQ$IWO1G3XOOQ$IS-E9h-E9hO!LYQ$IWO7+%ZOOQ$IS7+%]7+%]O!LhQ$IWO1G3XO!MVQ$IWO7+%]O!M[Q$IWO1G3_O!MlQ$IWO1G3_O!MtQ$IWO7+%ZO!MyQ$IWO,5>SO!NaQ$IWO,5>SO!NaQ$IWO,5>SO!NoO!LQO'#DwO!NzOSO'#HiOOOO1G/{1G/{O# PQ$IWO1G/{O# XQ%GlO7+(^O# xQ$I[O1G2PP#!cQ$IWO'#FyOOQ$IS,5<h,5<hOOQ$IS-E9z-E9zOOQ$IS7+&q7+&qOOQ$IS1G3T1G3TOOQ$IS,5<T,5<TOOQ$IS-E9g-E9gOOQ$IS7+$q7+$qO#!pQ$IWO,5=WO##ZQ$IWO,5=WO##lQ$I[O,5<WO#$PQ$IWO1G3ZOOQ$IS-E9j-E9jOOQ$IS7+&P7+&PO#$aQ$IWO7+&POOQ$IS7+&R7+&RO#$oQ$IWO'#HvO0PQ$IWO'#HuO#%TQ$IWO7+&ROOQ$IS,5<k,5<kO#%`Q$IWO1G3}OOQ$IS-E9}-E9}OOQ$IS,5<g,5<gO#%nQ$IWO1G3yOOQ$IS-E9y-E9yO#&UQ$IZO7+&]O!DsQ$IWO'#GSO3XQ$IWO7+&]O3XQ$IWO7+&`O#)gQ$I[O,5<oO'UQ$IWO,5<oO#)qQ$IWO1G4POOQ$IS-E:R-E:RO#){Q$IWO1G4PO3XQ$IWO7+&bO/jQ$IWO7+&bOOQ$IV7+&g7+&gO!ExQ%1`O7+&iO#*TQ$IXO1G0rOOQ$IV-E:S-E:SO3XQ$IWO7+&cO3XQ$IWO7+&cOOQ$IV,5<p,5<pO#+yQ$IWO,5<pOOQ$IV7+&c7+&cO#,UQ$IZO7+&cO#/dQ$IWO,5<qO#/oQ$IWO1G4QOOQ$IS-E:T-E:TO#/|Q$IWO1G4QO#0UQ$IWO'#H|O#0dQ$IWO'#H|O0PQ$IWO'#H|OOQ$IS'#H|'#H|O#0oQ$IWO'#H{OOQ$IS,5;e,5;eO#0wQ$IWO,5;eO/jQ$IWO'#E{OOQ$IV7+&i7+&iO3XQ$IWO7+&iOOQ$IV7+&n7+&nO#0|Q$IYO,5;oOOQ$IV7+&s7+&sOOQ$IS1G3a1G3aOOQ$IS,5<Y,5<YO#1RQ$IWO1G3`OOQ$IS-E9l-E9lO#1fQ$IWO,5<ZO#1qQ$IWO,5<ZO#2UQ$IWO1G3cOOQ$IS-E9m-E9mO#2fQ$IWO1G3cO#2nQ$IWO1G3cO#3OQ$IWO1G3cO#2fQ$IWO1G3cOOQ$IS<<HY<<HYO#3ZQ$I[O1G1qOOQ$IS<<Hi<<HiP#3hQ$IWO'#FkO7WQ$IWO1G3YO#3uQ$IWO1G3YO#3zQ$IWO<<HiOOQ$IS<<Hj<<HjO#4[Q$IWO7+(xOOQ$IS<<Hq<<HqO#4lQ$I[O1G1pP#5]Q$IWO'#FjO#5jQ$IWO7+(yO#5zQ$IWO7+(yO#6SQ$IWO<<HuO#6XQ$IWO7+(sOOQ$IS<<Hw<<HwO#7OQ$IWO,5<XO'UQ$IWO,5<XOOQ$IS-E9k-E9kOOQ$IS<<Hu<<HuOOQ$IS,5<_,5<_O/jQ$IWO,5<_O#7TQ$IWO1G3nOOQ$IS-E9q-E9qO#7kQ$IWO1G3nOOOO'#Ft'#FtO#7yO!LQO,5:cOOOO,5>T,5>TOOOO7+%g7+%gO#8UQ$IWO1G2rO#8oQ$IWO1G2rP'UQ$IWO'#FlO/jQ$IWO<<IkO#9QQ$IWO,5>bO#9cQ$IWO,5>bO0PQ$IWO,5>bO#9tQ$IWO,5>aOOQ$IS<<Im<<ImP0PQ$IWO'#GPP/jQ$IWO'#F{OOQ$IV-E:Q-E:QO3XQ$IWO<<IwOOQ$IV,5<n,5<nO3XQ$IWO,5<nOOQ$IV<<Iw<<IwOOQ$IV<<Iz<<IzO#9yQ$I[O1G2ZP#:TQ$IWO'#GTO#:[Q$IWO7+)kO#:fQ$IZO<<I|O3XQ$IWO<<I|OOQ$IV<<JT<<JTO3XQ$IWO<<JTOOQ$IV'#GR'#GRO#=tQ$IZO7+&^OOQ$IV<<I}<<I}O#?pQ$IZO<<I}OOQ$IV1G2[1G2[O0PQ$IWO1G2[O3XQ$IWO<<I}O0PQ$IWO1G2]P/jQ$IWO'#GVO#COQ$IWO7+)lO#C]Q$IWO7+)lOOQ$IS'#Ez'#EzO/jQ$IWO,5>hO#CeQ$IWO,5>hOOQ$IS,5>h,5>hO#CpQ$IWO,5>gO#DRQ$IWO,5>gOOQ$IS1G1P1G1POOQ$IS,5;g,5;gO#DZQ$IWO1G1ZP#D`Q$IWO'#FnO#DpQ$IWO1G1uO#ETQ$IWO1G1uO#EeQ$IWO1G1uP#EpQ$IWO'#FoO#E}Q$IWO7+(}O#F_Q$IWO7+(}O#F_Q$IWO7+(}O#FgQ$IWO7+(}O#FwQ$IWO7+(tO7WQ$IWO7+(tOOQ$ISAN>TAN>TO#GbQ$IWO<<LeOOQ$ISAN>aAN>aO/jQ$IWO1G1sO#GrQ$I[O1G1sP#G|Q$IWO'#FmOOQ$IS1G1y1G1yP#HZQ$IWO'#FsO#HhQ$IWO7+)YOOOO-E9r-E9rO#IOQ$IWO7+(^OOQ$ISAN?VAN?VO#IiQ$IWO,5<jO#I}Q$IWO1G3|OOQ$IS-E9|-E9|O#J`Q$IWO1G3|OOQ$IS1G3{1G3{OOQ$IVAN?cAN?cOOQ$IV1G2Y1G2YO3XQ$IWOAN?hO#JqQ$IZOAN?hOOQ$IVAN?oAN?oOOQ$IV-E:P-E:POOQ$IV<<Ix<<IxO3XQ$IWOAN?iO3XQ$IWO7+'vOOQ$IVAN?iAN?iOOQ$IS7+'w7+'wO#NPQ$IWO<<MWOOQ$IS1G4S1G4SO/jQ$IWO1G4SOOQ$IS,5<r,5<rO#N^Q$IWO1G4ROOQ$IS-E:U-E:UOOQ$IU'#GY'#GYO#NoQ$IYO7+&uO#NzQ$IWO'#FUO$ rQ$IWO7+'aO$!SQ$IWO7+'aOOQ$IS7+'a7+'aO$!_Q$IWO<<LiO$!oQ$IWO<<LiO$!oQ$IWO<<LiO$!wQ$IWO'#HUOOQ$IS<<L`<<L`O$#RQ$IWO<<L`OOQ$IS7+'_7+'_O0PQ$IWO1G2UP0PQ$IWO'#GOO$#lQ$IWO7+)hO$#}Q$IWO7+)hOOQ$IVG25SG25SO3XQ$IWOG25SOOQ$IVG25TG25TOOQ$IV<<Kb<<KbOOQ$IS7+)n7+)nP$$`Q$IWO'#GWOOQ$IU-E:W-E:WOOQ$IV<<Ja<<JaO$%SQ$I[O'#FWOOQ$IS'#FY'#FYO$%dQ$IWO'#FXO$&UQ$IWO'#FXOOQ$IS'#FX'#FXO$&ZQ$IWO'#IOO#NzQ$IWO'#F`O#NzQ$IWO'#F`O$&rQ$IWO'#FaO#NzQ$IWO'#FbO$&yQ$IWO'#IPOOQ$IS'#IP'#IPO$'hQ$IWO,5;pOOQ$IS<<J{<<J{O$'pQ$IWO<<J{O$(QQ$IWOANBTO$(bQ$IWOANBTO$(jQ$IWO'#HVOOQ$IS'#HV'#HVO0kQ$IWO'#DaO$)TQ$IWO,5=pOOQ$ISANAzANAzOOQ$IS7+'p7+'pO$)lQ$IWO<<MSOOQ$IVLD*nLD*nO4VQ%1`O'#G[O$)}Q$I[O,5;yO#NzQ$IWO'#FdOOQ$IS,5;},5;}OOQ$IS'#FZ'#FZO$*oQ$IWO,5;sO$*tQ$IWO,5;sOOQ$IS'#F^'#F^O#NzQ$IWO'#GZO$+fQ$IWO,5;wO$,QQ$IWO,5>jO$,bQ$IWO,5>jO0PQ$IWO,5;vO$,sQ$IWO,5;zO$,xQ$IWO,5;zO#NzQ$IWO'#IQO$,}Q$IWO'#IQO$-SQ$IWO,5;{OOQ$IS,5;|,5;|O'UQ$IWO'#FgOOQ$IU1G1[1G1[O3XQ$IWO1G1[OOQ$ISAN@gAN@gO$-XQ$IWOG27oO$-iQ$IWO,59{OOQ$IS1G3[1G3[OOQ$IS,5<v,5<vOOQ$IS-E:Y-E:YO$-nQ$I[O'#FWO$-uQ$IWO'#IRO$.TQ$IWO'#IRO$.]Q$IWO,5<OOOQ$IS1G1_1G1_O$.bQ$IWO1G1_O$.gQ$IWO,5<uOOQ$IS-E:X-E:XO$/RQ$IWO,5<yO$/jQ$IWO1G4UOOQ$IS-E:]-E:]OOQ$IS1G1b1G1bOOQ$IS1G1f1G1fO$/zQ$IWO,5>lO#NzQ$IWO,5>lOOQ$IS1G1g1G1gO$0YQ$I[O,5<ROOQ$IU7+&v7+&vO$!wQ$IWO1G/gO#NzQ$IWO,5<PO$0aQ$IWO,5>mO$0hQ$IWO,5>mOOQ$IS1G1j1G1jOOQ$IS7+&y7+&yP#NzQ$IWO'#G_O$0pQ$IWO1G4WO$0zQ$IWO1G4WO$1SQ$IWO1G4WOOQ$IS7+%R7+%RO$1bQ$IWO1G1kO$1pQ$I[O'#FWO$1wQ$IWO,5<xOOQ$IS,5<x,5<xO$2VQ$IWO1G4XOOQ$IS-E:[-E:[O#NzQ$IWO,5<wO$2^Q$IWO,5<wO$2cQ$IWO7+)rOOQ$IS-E:Z-E:ZO$2mQ$IWO7+)rO#NzQ$IWO,5<QP#NzQ$IWO'#G^O$2uQ$IWO1G2cO#NzQ$IWO1G2cP$3TQ$IWO'#G]O$3[Q$IWO<<M^O$3fQ$IWO1G1lO$3tQ$IWO7+'}O7WQ$IWO'#C{O7WQ$IWO,59`O7WQ$IWO,59`O7WQ$IWO,59`O$4SQ$I[O,5=WO7WQ$IWO1G.zO/jQ$IWO1G/VO/jQ$IWO7+$nP$4gQ$IWO'#FyO'UQ$IWO'#GlO$4tQ$IWO,59`O$4yQ$IWO,59`O$5QQ$IWO,59kO$5VQ$IWO1G/SO0kQ$IWO'#DPO7WQ$IWO,59h",
-     stateData: "$5m~O%[OS%XOS%WOSQOS~OPhOTeOdsOfXOmtOq!SOtuO}vO!O!PO!R!VO!S!UO!VYO!ZZO!fdO!mdO!ndO!odO!vxO!xyO!zzO!|{O#O|O#S}O#U!OO#X!QO#Y!QO#[!RO#c!TO#f!WO#j!XO#l!YO#q!ZO#tlO#v![O%VqO%gQO%hQO%lRO%mVO&R[O&S]O&V^O&Y_O&``O&caO&ebO~OT!bO]!bO_!cOf!jO!V!lO!d!nO%b!]O%c!^O%d!_O%e!`O%f!`O%g!aO%h!aO%i!bO%j!bO%k!bO~Oi%pXj%pXk%pXl%pXm%pXn%pXq%pXx%pXy%pX!s%pX#^%pX%V%pX%Y%pX%r%pXe%pX!R%pX!S%pX%s%pX!U%pX!Y%pX!O%pX#V%pXr%pX!j%pX~P$bOdsOfXO!VYO!ZZO!fdO!mdO!ndO!odO%gQO%hQO%lRO%mVO&R[O&S]O&V^O&Y_O&``O&caO&ebO~Ox%oXy%oX#^%oX%V%oX%Y%oX%r%oX~Oi!qOj!rOk!pOl!pOm!sOn!tOq!uO!s%oX~P(cOT!{Om/iOt/wO}vO~P'UOT#OOm/iOt/wO!U#PO~P'UOT#SO_#TOm/iOt/wO!Y#UO~P'UO&T#XO&U#ZO~O&W#[O&X#ZO~O!Z#^O&Z#_O&_#aO~O!Z#^O&a#bO&b#aO~O!Z#^O&U#aO&d#dO~O!Z#^O&X#aO&f#fO~OT%aX]%aX_%aXf%aXi%aXj%aXk%aXl%aXm%aXn%aXq%aXx%aX!V%aX!d%aX%b%aX%c%aX%d%aX%e%aX%f%aX%g%aX%h%aX%i%aX%j%aX%k%aXe%aX!R%aX!S%aX~O&R[O&S]O&V^O&Y_O&``O&caO&ebOy%aX!s%aX#^%aX%V%aX%Y%aX%r%aX%s%aX!U%aX!Y%aX!O%aX#V%aXr%aX!j%aX~P+xOx#kOy%`X!s%`X#^%`X%V%`X%Y%`X%r%`X~Om/iOt/wO~P'UO#^#nO%V#pO%Y#pO~O%mVO~O!R#uO#l!YO#q!ZO#tlO~OmtO~P'UOT#zO_#{O%mVOyuP~OT$POm/iOt/wO!O$QO~P'UOy$SO!s$XO%r$TO#^!tX%V!tX%Y!tX~OT$POm/iOt/wO#^!}X%V!}X%Y!}X~P'UOm/iOt/wO#^#RX%V#RX%Y#RX~P'UO!d$_O!m$_O%mVO~OT$iO~P'UO!S$kO#j$lO#l$mO~Oy$nO~OT$uO~P'UOT%OO_%OOe%QOm/iOt/wO~P'UOm/iOt/wOy%TO~P'UO&Q%VO~O_!cOf!jO!V!lO!d!nOT`a]`ai`aj`ak`al`am`an`aq`ax`ay`a!s`a#^`a%V`a%Y`a%b`a%c`a%d`a%e`a%f`a%g`a%h`a%i`a%j`a%k`a%r`ae`a!R`a!S`a%s`a!U`a!Y`a!O`a#V`ar`a!j`a~Ol%[O~Om%[O~P'UOm/iO~P'UOi/kOj/lOk/jOl/jOm/sOn/tOq/xOe%oX!R%oX!S%oX%s%oX!U%oX!Y%oX!O%oX#V%oX!j%oX~P(cO%s%^Oe%nXx%nX!R%nX!S%nX!U%nXy%nX~Oe%`Ox%aO!R%eO!S%dO~Oe%`O~Ox%hO!R%eO!S%dO!U%zX~O!U%lO~Ox%mOy%oO!R%eO!S%dO!Y%uX~O!Y%sO~O!Y%tO~O&T#XO&U%vO~O&W#[O&X%vO~OT%yOm/iOt/wO}vO~P'UO!Z#^O&Z#_O&_%|O~O!Z#^O&a#bO&b%|O~O!Z#^O&U%|O&d#dO~O!Z#^O&X%|O&f#fO~OT!la]!la_!laf!lai!laj!lak!lal!lam!lan!laq!lax!lay!la!V!la!d!la!s!la#^!la%V!la%Y!la%b!la%c!la%d!la%e!la%f!la%g!la%h!la%i!la%j!la%k!la%r!lae!la!R!la!S!la%s!la!U!la!Y!la!O!la#V!lar!la!j!la~P#yOx&ROy%`a!s%`a#^%`a%V%`a%Y%`a%r%`a~P$bOT&TOmtOtuOy%`a!s%`a#^%`a%V%`a%Y%`a%r%`a~P'UOx&ROy%`a!s%`a#^%`a%V%`a%Y%`a%r%`a~OPhOTeOmtOtuO}vO!O!PO!vxO!xyO!zzO!|{O#O|O#S}O#U!OO#X!QO#Y!QO#[!RO#^$tX%V$tX%Y$tX~P'UO#^#nO%V&YO%Y&YO~O!d&ZOf&hX%V&hX#V&hX#^&hX%Y&hX#U&hX~Of!jO%V&]O~Oicajcakcalcamcancaqcaxcayca!sca#^ca%Vca%Yca%rcaeca!Rca!Sca%sca!Uca!Yca!Oca#Vcarca!jca~P$bOqoaxoayoa#^oa%Voa%Yoa%roa~Oi!qOj!rOk!pOl!pOm!sOn!tO!soa~PD_O%r&_Ox%qXy%qX~O%mVOx%qXy%qX~Ox&bOyuX~Oy&dO~Ox%mO#^%uX%V%uX%Y%uXe%uXy%uX!Y%uX!j%uX%r%uX~OT/rOm/iOt/wO}vO~P'UO%r$TO#^Sa%VSa%YSa~Ox&mO#^%wX%V%wX%Y%wXl%wX~P$bOx&pO!O&oO#^#Ra%V#Ra%Y#Ra~O#V&qO#^#Ta%V#Ta%Y#Ta~O!d$_O!m$_O#U&sO%mVO~O#U&sO~Ox&uO#^&kX%V&kX%Y&kX~Ox&wO#^&gX%V&gX%Y&gXy&gX~Ox&{Ol&mX~P$bOl'OO~OPhOTeOmtOtuO}vO!O!PO!vxO!xyO!zzO!|{O#O|O#S}O#U!OO#X!QO#Y!QO#[!RO%V'TO~P'UOr'XO#g'VO#h'WOP#eaT#ead#eaf#eam#eaq#eat#ea}#ea!O#ea!R#ea!S#ea!V#ea!Z#ea!f#ea!m#ea!n#ea!o#ea!v#ea!x#ea!z#ea!|#ea#O#ea#S#ea#U#ea#X#ea#Y#ea#[#ea#c#ea#f#ea#j#ea#l#ea#q#ea#t#ea#v#ea%S#ea%V#ea%g#ea%h#ea%l#ea%m#ea&R#ea&S#ea&V#ea&Y#ea&`#ea&c#ea&e#ea%U#ea%Y#ea~Ox'YO#V'[Oy&nX~Of'^O~Of!jOy$nO~Oy'bO~P$bOT!bO]!bO_!cOf!jO!V!lO!d!nO%d!_O%e!`O%f!`O%g!aO%h!aO%i!bO%j!bO%k!bOiUijUikUilUimUinUiqUixUiyUi!sUi#^Ui%VUi%YUi%bUi%rUieUi!RUi!SUi%sUi!UUi!YUi!OUi#VUirUi!jUi~O%c!^O~P! YO%cUi~P! YOT!bO]!bO_!cOf!jO!V!lO!d!nO%g!aO%h!aO%i!bO%j!bO%k!bOiUijUikUilUimUinUiqUixUiyUi!sUi#^Ui%VUi%YUi%bUi%cUi%dUi%rUieUi!RUi!SUi%sUi!UUi!YUi!OUi#VUirUi!jUi~O%e!`O%f!`O~P!$TO%eUi%fUi~P!$TO_!cOf!jO!V!lO!d!nOiUijUikUilUimUinUiqUixUiyUi!sUi#^Ui%VUi%YUi%bUi%cUi%dUi%eUi%fUi%gUi%hUi%rUieUi!RUi!SUi%sUi!UUi!YUi!OUi#VUirUi!jUi~OT!bO]!bO%i!bO%j!bO%k!bO~P!'ROTUi]Ui%iUi%jUi%kUi~P!'RO!R%eO!S%dOe%}Xx%}X~O%r'fO%s'fO~P+xOx'hOe%|X~Oe'jO~Ox'kOy'mO!U&PX~Om/iOt/wOx'kOy'nO!U&PX~P'UO!U'pO~Ok!pOl!pOm!sOn!tOihiqhixhiyhi!shi#^hi%Vhi%Yhi%rhi~Oj!rO~P!+tOjhi~P!+tOi/kOj/lOk/jOl/jOm/sOn/tO~Or'rO~P!,}OT'wOe'xOm/iOt/wO~P'UOe'xOx'yO~Oe'{O~O!S'}O~Oe(OOx'yO!R%eO!S%dO~P$bOi/kOj/lOk/jOl/jOm/sOn/tOeoa!Roa!Soa%soa!Uoa!Yoa!Ooa#Voaroa!joa~PD_OT'wOm/iOt/wO!U%za~P'UOx(RO!U%za~O!U(SO~Ox(RO!R%eO!S%dO!U%za~P$bOT(WOm/iOt/wO!Y%ua#^%ua%V%ua%Y%uae%uay%ua!j%ua%r%ua~P'UOx(XO!Y%ua#^%ua%V%ua%Y%uae%uay%ua!j%ua%r%ua~O!Y([O~Ox(XO!R%eO!S%dO!Y%ua~P$bOx(_O!R%eO!S%dO!Y%{a~P$bOx(bOy&[X!Y&[X!j&[X~Oy(eO!Y(gO!j(hO~OT&TOmtOtuOy%`i!s%`i#^%`i%V%`i%Y%`i%r%`i~P'UOx(iOy%`i!s%`i#^%`i%V%`i%Y%`i%r%`i~O!d&ZOf&ha%V&ha#V&ha#^&ha%Y&ha#U&ha~O%V(nO~OT#zO_#{O%mVO~Ox&bOyua~OmtOtuO~P'UOx(XO#^%ua%V%ua%Y%uae%uay%ua!Y%ua!j%ua%r%ua~P$bOx(sO#^%`X%V%`X%Y%`X%r%`X~O%r$TO#^Si%VSi%YSi~O#^%wa%V%wa%Y%wal%wa~P'UOx(vO#^%wa%V%wa%Y%wal%wa~OT(zOf(|O%mVO~O#U(}O~O%mVO#^&ka%V&ka%Y&ka~Ox)PO#^&ka%V&ka%Y&ka~Om/iOt/wO#^&ga%V&ga%Y&gay&ga~P'UOx)SO#^&ga%V&ga%Y&gay&ga~Or)WO#a)VOP#_iT#_id#_if#_im#_iq#_it#_i}#_i!O#_i!R#_i!S#_i!V#_i!Z#_i!f#_i!m#_i!n#_i!o#_i!v#_i!x#_i!z#_i!|#_i#O#_i#S#_i#U#_i#X#_i#Y#_i#[#_i#c#_i#f#_i#j#_i#l#_i#q#_i#t#_i#v#_i%S#_i%V#_i%g#_i%h#_i%l#_i%m#_i&R#_i&S#_i&V#_i&Y#_i&`#_i&c#_i&e#_i%U#_i%Y#_i~Or)XOP#biT#bid#bif#bim#biq#bit#bi}#bi!O#bi!R#bi!S#bi!V#bi!Z#bi!f#bi!m#bi!n#bi!o#bi!v#bi!x#bi!z#bi!|#bi#O#bi#S#bi#U#bi#X#bi#Y#bi#[#bi#c#bi#f#bi#j#bi#l#bi#q#bi#t#bi#v#bi%S#bi%V#bi%g#bi%h#bi%l#bi%m#bi&R#bi&S#bi&V#bi&Y#bi&`#bi&c#bi&e#bi%U#bi%Y#bi~OT)ZOl&ma~P'UOx)[Ol&ma~Ox)[Ol&ma~P$bOl)`O~O%T)cO~Or)fO#g'VO#h)eOP#eiT#eid#eif#eim#eiq#eit#ei}#ei!O#ei!R#ei!S#ei!V#ei!Z#ei!f#ei!m#ei!n#ei!o#ei!v#ei!x#ei!z#ei!|#ei#O#ei#S#ei#U#ei#X#ei#Y#ei#[#ei#c#ei#f#ei#j#ei#l#ei#q#ei#t#ei#v#ei%S#ei%V#ei%g#ei%h#ei%l#ei%m#ei&R#ei&S#ei&V#ei&Y#ei&`#ei&c#ei&e#ei%U#ei%Y#ei~Om/iOt/wOy$nO~P'UOm/iOt/wOy&na~P'UOx)lOy&na~OT)pO_)qOe)tO%i)rO%mVO~Oy$nO&q)vO~O%V)zO~OT%OO_%OOm/iOt/wOe%|a~P'UOx*OOe%|a~Om/iOt/wOy*RO!U&Pa~P'UOx*SO!U&Pa~Om/iOt/wOx*SOy*VO!U&Pa~P'UOm/iOt/wOx*SO!U&Pa~P'UOx*SOy*VO!U&Pa~Ok/jOl/jOm/sOn/tOehiihiqhixhi!Rhi!Shi%shi!Uhiyhi!Yhi#^hi%Vhi%Yhi!Ohi#Vhirhi!jhi%rhi~Oj/lO~P!H[Ojhi~P!H[OT'wOe*[Om/iOt/wO~P'UOl*^O~Oe*[Ox*`O~Oe*aO~OT'wOm/iOt/wO!U%zi~P'UOx*bO!U%zi~O!U*cO~OT(WOm/iOt/wO!Y%ui#^%ui%V%ui%Y%uie%uiy%ui!j%ui%r%ui~P'UOx*fO!R%eO!S%dO!Y%{i~Ox*iO!Y%ui#^%ui%V%ui%Y%uie%uiy%ui!j%ui%r%ui~O!Y*jO~O_*lOm/iOt/wO!Y%{i~P'UOx*fO!Y%{i~O!Y*nO~OT*pOm/iOt/wOy&[a!Y&[a!j&[a~P'UOx*qOy&[a!Y&[a!j&[a~O!Z#^O&^*tO!Y!kX~O!Y*vO~Oy(eO!Y*wO~OT&TOmtOtuOy%`q!s%`q#^%`q%V%`q%Y%`q%r%`q~P'UOx$miy$mi!s$mi#^$mi%V$mi%Y$mi%r$mi~P$bOT&TOmtOtuO~P'UOT&TOm/iOt/wO#^%`a%V%`a%Y%`a%r%`a~P'UOx*xO#^%`a%V%`a%Y%`a%r%`a~Ox$`a#^$`a%V$`a%Y$`al$`a~P$bO#^%wi%V%wi%Y%wil%wi~P'UOx*{O#^#Rq%V#Rq%Y#Rq~Ox*|O#V+OO#^&jX%V&jX%Y&jXe&jX~OT+QOf(|O%mVO~O%mVO#^&ki%V&ki%Y&ki~Om/iOt/wO#^&gi%V&gi%Y&giy&gi~P'UOr+UO#a)VOP#_qT#_qd#_qf#_qm#_qq#_qt#_q}#_q!O#_q!R#_q!S#_q!V#_q!Z#_q!f#_q!m#_q!n#_q!o#_q!v#_q!x#_q!z#_q!|#_q#O#_q#S#_q#U#_q#X#_q#Y#_q#[#_q#c#_q#f#_q#j#_q#l#_q#q#_q#t#_q#v#_q%S#_q%V#_q%g#_q%h#_q%l#_q%m#_q&R#_q&S#_q&V#_q&Y#_q&`#_q&c#_q&e#_q%U#_q%Y#_q~Ol$wax$wa~P$bOT)ZOl&mi~P'UOx+]Ol&mi~OPhOTeOmtOq!SOtuO}vO!O!PO!R!VO!S!UO!vxO!xyO!zzO!|{O#O|O#S}O#U!OO#X!QO#Y!QO#[!RO#c!TO#f!WO#j!XO#l!YO#q!ZO#tlO#v![O~P'UOx+gOy$nO#V+gO~O#h+hOP#eqT#eqd#eqf#eqm#eqq#eqt#eq}#eq!O#eq!R#eq!S#eq!V#eq!Z#eq!f#eq!m#eq!n#eq!o#eq!v#eq!x#eq!z#eq!|#eq#O#eq#S#eq#U#eq#X#eq#Y#eq#[#eq#c#eq#f#eq#j#eq#l#eq#q#eq#t#eq#v#eq%S#eq%V#eq%g#eq%h#eq%l#eq%m#eq&R#eq&S#eq&V#eq&Y#eq&`#eq&c#eq&e#eq%U#eq%Y#eq~O#V+iOx$yay$ya~Om/iOt/wOy&ni~P'UOx+kOy&ni~Oy$SO%r+mOe&pXx&pX~O%mVOe&pXx&pX~Ox+qOe&oX~Oe+sO~O%T+uO~OT%OO_%OOm/iOt/wOe%|i~P'UOy+wOx$ca!U$ca~Om/iOt/wOy+xOx$ca!U$ca~P'UOm/iOt/wOy*RO!U&Pi~P'UOx+{O!U&Pi~Om/iOt/wOx+{O!U&Pi~P'UOx+{Oy,OO!U&Pi~Oe$_ix$_i!U$_i~P$bOT'wOm/iOt/wO~P'UOl,QO~OT'wOe,ROm/iOt/wO~P'UOT'wOm/iOt/wO!U%zq~P'UOx$^i!Y$^i#^$^i%V$^i%Y$^ie$^iy$^i!j$^i%r$^i~P$bOT(WOm/iOt/wO~P'UO_*lOm/iOt/wO!Y%{q~P'UOx,SO!Y%{q~O!Y,TO~OT(WOm/iOt/wO!Y%uq#^%uq%V%uq%Y%uqe%uqy%uq!j%uq%r%uq~P'UOy,UO~OT*pOm/iOt/wOy&[i!Y&[i!j&[i~P'UOx,ZOy&[i!Y&[i!j&[i~O!Z#^O&^*tO!Y!ka~OT&TOm/iOt/wO#^%`i%V%`i%Y%`i%r%`i~P'UOx,]O#^%`i%V%`i%Y%`i%r%`i~O%mVO#^&ja%V&ja%Y&jae&ja~Ox,`O#^&ja%V&ja%Y&jae&ja~Oe,cO~Ol$wix$wi~P$bOT)ZO~P'UOT)ZOl&mq~P'UOr,fOP#dyT#dyd#dyf#dym#dyq#dyt#dy}#dy!O#dy!R#dy!S#dy!V#dy!Z#dy!f#dy!m#dy!n#dy!o#dy!v#dy!x#dy!z#dy!|#dy#O#dy#S#dy#U#dy#X#dy#Y#dy#[#dy#c#dy#f#dy#j#dy#l#dy#q#dy#t#dy#v#dy%S#dy%V#dy%g#dy%h#dy%l#dy%m#dy&R#dy&S#dy&V#dy&Y#dy&`#dy&c#dy&e#dy%U#dy%Y#dy~OPhOTeOmtOq!SOtuO}vO!O!PO!R!VO!S!UO!vxO!xyO!zzO!|{O#O|O#S}O#U!OO#X!QO#Y!QO#[!RO#c!TO#f!WO#j!XO#l!YO#q!ZO#tlO#v![O%U,jO%Y,jO~P'UO#h,kOP#eyT#eyd#eyf#eym#eyq#eyt#ey}#ey!O#ey!R#ey!S#ey!V#ey!Z#ey!f#ey!m#ey!n#ey!o#ey!v#ey!x#ey!z#ey!|#ey#O#ey#S#ey#U#ey#X#ey#Y#ey#[#ey#c#ey#f#ey#j#ey#l#ey#q#ey#t#ey#v#ey%S#ey%V#ey%g#ey%h#ey%l#ey%m#ey&R#ey&S#ey&V#ey&Y#ey&`#ey&c#ey&e#ey%U#ey%Y#ey~Om/iOt/wOy&nq~P'UOx,oOy&nq~O%r+mOe&pax&pa~OT)pO_)qO%i)rO%mVOe&oa~Ox,sOe&oa~O#y,wO~OT%OO_%OOm/iOt/wO~P'UOm/iOt/wOy,xOx$ci!U$ci~P'UOm/iOt/wOx$ci!U$ci~P'UOy,xOx$ci!U$ci~Om/iOt/wOy*RO~P'UOm/iOt/wOy*RO!U&Pq~P'UOx,{O!U&Pq~Om/iOt/wOx,{O!U&Pq~P'UOq-OO!R%eO!S%dOe%vq!U%vq!Y%vqx%vq~P!,}O_*lOm/iOt/wO!Y%{y~P'UOx$ai!Y$ai~P$bO_*lOm/iOt/wO~P'UOT*pOm/iOt/wO~P'UOT*pOm/iOt/wOy&[q!Y&[q!j&[q~P'UOT&TOm/iOt/wO#^%`q%V%`q%Y%`q%r%`q~P'UO#V-SOx$ra#^$ra%V$ra%Y$rae$ra~O%mVO#^&ji%V&ji%Y&jie&ji~Ox-UO#^&ji%V&ji%Y&jie&ji~Or-XOP#d!RT#d!Rd#d!Rf#d!Rm#d!Rq#d!Rt#d!R}#d!R!O#d!R!R#d!R!S#d!R!V#d!R!Z#d!R!f#d!R!m#d!R!n#d!R!o#d!R!v#d!R!x#d!R!z#d!R!|#d!R#O#d!R#S#d!R#U#d!R#X#d!R#Y#d!R#[#d!R#c#d!R#f#d!R#j#d!R#l#d!R#q#d!R#t#d!R#v#d!R%S#d!R%V#d!R%g#d!R%h#d!R%l#d!R%m#d!R&R#d!R&S#d!R&V#d!R&Y#d!R&`#d!R&c#d!R&e#d!R%U#d!R%Y#d!R~Om/iOt/wOy&ny~P'UOT)pO_)qO%i)rO%mVOe&oi~O#y,wO%U-_O%Y-_O~OT-iOf-gO!V-fO!Z-hO!f-bO!n-dO!o-dO%h-aO%mVO&R[O&S]O&V^O~Om/iOt/wOx$cq!U$cq~P'UOy-nOx$cq!U$cq~Om/iOt/wOy*RO!U&Py~P'UOx-oO!U&Py~Om/iOt-sO~P'UOq-OO!R%eO!S%dOe%vy!U%vy!Y%vyx%vy~P!,}O%mVO#^&jq%V&jq%Y&jqe&jq~Ox-wO#^&jq%V&jq%Y&jqe&jq~OT)pO_)qO%i)rO%mVO~Of-{O!d-yOx#zX#V#zX%b#zXe#zX~Oq#zXy#zX!U#zX!Y#zX~P$$nO%g-}O%h-}Oq#{Xx#{Xy#{X#V#{X%b#{X!U#{Xe#{X!Y#{X~O!f.PO~Ox.TO#V.VO%b.QOq&rXy&rX!U&rXe&rX~O_.YO~P$ WOf-{Oq&sXx&sXy&sX#V&sX%b&sX!U&sXe&sX!Y&sX~Oq.^Oy$nO~Om/iOt/wOx$cy!U$cy~P'UOm/iOt/wOy*RO!U&P!R~P'UOx.bO!U&P!R~Oe%yXq%yX!R%yX!S%yX!U%yX!Y%yXx%yX~P!,}Oq-OO!R%eO!S%dOe%xa!U%xa!Y%xax%xa~O%mVO#^&jy%V&jy%Y&jye&jy~O!d-yOf$Raq$Rax$Ray$Ra#V$Ra%b$Ra!U$Rae$Ra!Y$Ra~O!f.kO~O%g-}O%h-}Oq#{ax#{ay#{a#V#{a%b#{a!U#{ae#{a!Y#{a~O%b.QOq$Pax$Pay$Pa#V$Pa!U$Pae$Pa!Y$Pa~Oq&ray&ra!U&rae&ra~P#NzOx.pOq&ray&ra!U&rae&ra~O!U.sO~Oe.sO~Oy.uO~O!Y.vO~Om/iOt/wOy*RO!U&P!Z~P'UOy.yO~O%r.zO~P$$nOx.{O#V.VO%b.QOe&uX~Ox.{Oe&uX~Oe.}O~O!f/OO~O#V.VOq$}ax$}ay$}a%b$}a!U$}ae$}a!Y$}a~O#V.VO%b.QOq%Rax%Ray%Ra!U%Rae%Ra~Oq&riy&ri!U&rie&ri~P#NzOx/QO#V.VO%b.QO!Y&ta~Oy$Za~P$bOe&ua~P#NzOx/YOe&ua~O_/[O!Y&ti~P$ WOx/^O!Y&ti~Ox/^O#V.VO%b.QO!Y&ti~O#V.VO%b.QOe$Xix$Xi~O%r/aO~P$$nO#V.VO%b.QOe%Qax%Qa~Oe&ui~P#NzOy/dO~O_/[O!Y&tq~P$ WOx/fO!Y&tq~O#V.VO%b.QOx%Pi!Y%Pi~O_/[O~P$ WO_/[O!Y&ty~P$ WO#V.VO%b.QOe$Yix$Yi~O#V.VO%b.QOx%Pq!Y%Pq~Ox*xO#^%`a%V%`a%Y%`a%r%`a~P$bOT&TOm/iOt/wO~P'UOl/nO~Om/nO~P'UOy/oO~Or/pO~P!,}O&S&V&c&e&R!Z&Z&a&d&f&Y&`&Y%m~",
-     goto: "!9p&vPPPP&wP'P*e*}+h,S,o-]P-zP'P.k.k'PPPP'P2PPPPPPP2P4oPP4oP6{7U=QPP=T=c=fPP'P'PPP=rPP'P'PPP'P'P'P'P'P=v>m'PP>pP>vByFcPFw'PPPPF{GR&wP&w&wP&wP&wP&wP&wP&w&w&wP&wPP&wPP&wPGXPG`GfPG`PG`G`PPPG`PIePInItIzIePG`JQPG`PJXJ_PJcJwKfLPJcJcLVLdJcJcJcJcLxMOMRMWMZMaMgMsNVN]NgNm! Z! a! g! m! w! }!!T!!Z!!a!!g!!y!#T!#Z!#a!#g!#q!#w!#}!$T!$Z!$e!$k!$u!${!%U!%[!%k!%s!%}!&UPPPPPPPPP!&[!&d!&m!&w!'SPPPPPPPPPPPP!+r!,[!0j!3vPP!4O!4^!4g!5]!5S!5f!5l!5o!5r!5u!5}!6nPPPPPPPPPP!6q!6tPPPPPPPPP!6z!7W!7d!7j!7s!7v!7|!8S!8Y!8]P!8e!8n!9j!9m]iOr#n$n)c+c'udOSXYZehrstvx|}!R!S!T!U!X![!d!e!f!g!h!i!j!l!p!q!r!t!u!{#O#S#T#^#k#n$P$Q$S$U$X$i$k$l$n$u%O%T%[%_%a%d%h%m%o%y&R&T&`&d&m&o&p&w&{'O'V'Y'g'h'k'm'n'r'w'y'}(R(W(X(_(b(i(k(s(v)S)V)Z)[)`)c)l)v*O*R*S*V*]*^*`*b*e*f*i*l*p*q*x*z*{+S+[+]+c+j+k+n+v+w+x+z+{,O,Q,S,U,W,Y,Z,],o,q,x,{-O-n-o.^.b.y/i/j/k/l/n/o/p/q/r/t/x}!dP#j#w$Y$h$t%f%k%q%r&e&}'d(j(u)Y*Z*d+Z,V.w/m!P!eP#j#w$Y$h$t$v%f%k%q%r&e&}'d(j(u)Y*Z*d+Z,V.w/m!R!fP#j#w$Y$h$t$v$w%f%k%q%r&e&}'d(j(u)Y*Z*d+Z,V.w/m!T!gP#j#w$Y$h$t$v$w$x%f%k%q%r&e&}'d(j(u)Y*Z*d+Z,V.w/m!V!hP#j#w$Y$h$t$v$w$x$y%f%k%q%r&e&}'d(j(u)Y*Z*d+Z,V.w/m!X!iP#j#w$Y$h$t$v$w$x$y$z%f%k%q%r&e&}'d(j(u)Y*Z*d+Z,V.w/m!]!iP!o#j#w$Y$h$t$v$w$x$y$z${%f%k%q%r&e&}'d(j(u)Y*Z*d+Z,V.w/m'uSOSXYZehrstvx|}!R!S!T!U!X![!d!e!f!g!h!i!j!l!p!q!r!t!u!{#O#S#T#^#k#n$P$Q$S$U$X$i$k$l$n$u%O%T%[%_%a%d%h%m%o%y&R&T&`&d&m&o&p&w&{'O'V'Y'g'h'k'm'n'r'w'y'}(R(W(X(_(b(i(k(s(v)S)V)Z)[)`)c)l)v*O*R*S*V*]*^*`*b*e*f*i*l*p*q*x*z*{+S+[+]+c+j+k+n+v+w+x+z+{,O,Q,S,U,W,Y,Z,],o,q,x,{-O-n-o.^.b.y/i/j/k/l/n/o/p/q/r/t/x&ZUOXYZhrtv|}!R!S!T!X!j!l!p!q!r!t!u#^#k#n$Q$S$U$X$l$n%O%T%[%_%a%h%m%o%y&R&`&d&o&p&w'O'V'Y'g'h'k'm'n'r'y(R(X(_(b(i(k(s)S)V)`)c)l)v*O*R*S*V*]*^*`*b*e*f*i*p*q*x*{+S+c+j+k+n+v+w+x+z+{,O,Q,S,U,W,Y,Z,],o,q,x,{-O-n-o.b.y/i/j/k/l/n/o/p/q/t/x%eWOXYZhrv|}!R!S!T!X!j!l#^#k#n$Q$S$U$X$l$n%O%T%_%a%h%m%o%y&R&`&d&o&p&w'O'V'Y'g'h'k'm'n'r'y(R(X(_(b(i(k(s)S)V)`)c)l)v*O*R*S*V*]*`*b*e*f*i*p*q*x*{+S+c+j+k+n+v+w+x+z+{,O,S,U,W,Y,Z,],o,q,x,{-n-o.b/o/p/qQ#}uQ.c-sR/u/w'ldOSXYZehrstvx|}!R!S!T!U!X![!d!e!f!g!h!i!l!p!q!r!t!u!{#O#S#T#^#k#n$P$Q$S$U$X$i$k$l$n$u%O%T%[%_%a%d%h%m%o%y&R&T&`&d&m&o&p&w&{'O'V'Y'g'k'm'n'r'w'y'}(R(W(X(_(b(i(k(s(v)S)V)Z)[)`)c)l)v*R*S*V*]*^*`*b*e*f*i*l*p*q*x*z*{+S+[+]+c+j+k+n+w+x+z+{,O,Q,S,U,W,Y,Z,],o,q,x,{-O-n-o.^.b.y/i/j/k/l/n/o/p/q/r/t/xW#ql!O!P$`W#yu&b-s/wQ$b!QQ$r!YQ$s!ZW$}!j'h*O+vS&a#z#{Q'R$mQ(l&ZQ(z&qU({&s(|(}U)O&u)P+RQ)n'[W)o'^+q,s-]S+p)p)qY,_*|,`-T-U-wQ,b+OQ,l+gQ,n+il-`,w-f-g-i.R.T.Y.p.u.z/P/[/a/dQ-v-SQ.Z-hQ.g-{Q.r.VU/V.{/Y/bX/]/Q/^/e/fR&`#yi!xXY!S!T%a%h'y(R)V*]*`*bR%_!wQ!|XQ%z#^Q&i$UR&l$XT-r-O.y![!kP!o#j#w$Y$h$t$v$w$x$y$z${%f%k%q%r&e&}'d(j(u)Y*Z*d+Z,V.w/mQ&^#rR'a$sR'g$}Q%W!nR.e-y'tcOSXYZehrstvx|}!R!S!T!U!X![!d!e!f!g!h!i!j!l!p!q!r!t!u!{#O#S#T#^#k#n$P$Q$S$U$X$i$k$l$n$u%O%T%[%_%a%d%h%m%o%y&R&T&`&d&m&o&p&w&{'O'V'Y'g'h'k'm'n'r'w'y'}(R(W(X(_(b(i(k(s(v)S)V)Z)[)`)c)l)v*O*R*S*V*]*^*`*b*e*f*i*l*p*q*x*z*{+S+[+]+c+j+k+n+v+w+x+z+{,O,Q,S,U,W,Y,Z,],o,q,x,{-O-n-o.^.b.y/i/j/k/l/n/o/p/q/r/t/xS#hc#i!P-d,w-f-g-h-i-{.R.T.Y.p.u.z.{/P/Q/Y/[/^/a/b/d/e/f'tcOSXYZehrstvx|}!R!S!T!U!X![!d!e!f!g!h!i!j!l!p!q!r!t!u!{#O#S#T#^#k#n$P$Q$S$U$X$i$k$l$n$u%O%T%[%_%a%d%h%m%o%y&R&T&`&d&m&o&p&w&{'O'V'Y'g'h'k'm'n'r'w'y'}(R(W(X(_(b(i(k(s(v)S)V)Z)[)`)c)l)v*O*R*S*V*]*^*`*b*e*f*i*l*p*q*x*z*{+S+[+]+c+j+k+n+v+w+x+z+{,O,Q,S,U,W,Y,Z,],o,q,x,{-O-n-o.^.b.y/i/j/k/l/n/o/p/q/r/t/xT#hc#iS#__#`S#b`#cS#da#eS#fb#gT*t(e*uT(f%z(hQ$WwR+o)oX$Uw$V$W&kZkOr$n)c+cXoOr)c+cQ$o!WQ&y$fQ&z$gQ']$qQ'`$sQ)a'QQ)g'VQ)i'WQ)j'XQ)w'_Q)y'aQ+V)VQ+X)WQ+Y)XQ+^)_S+`)b)xQ+d)eQ+e)fQ+f)hQ,d+UQ,e+WQ,g+_Q,h+aQ,m+hQ-W,fQ-Y,kQ-Z,lQ-x-XQ._-lR.x.`WoOr)c+cR#tnQ'_$rR)b'RQ+n)oR,q+oQ)x'_R+a)bZmOnr)c+cQ'c$tR){'dT,u+u,vu-k,w-f-g-i-{.R.T.Y.p.u.z.{/P/Y/[/a/b/dt-k,w-f-g-i-{.R.T.Y.p.u.z.{/P/Y/[/a/b/dQ.Z-hX/]/Q/^/e/f!P-c,w-f-g-h-i-{.R.T.Y.p.u.z.{/P/Q/Y/[/^/a/b/d/e/fQ.O-bR.l.Pg.R-e.S.h.o.t/S/U/W/c/g/hu-j,w-f-g-i-{.R.T.Y.p.u.z.{/P/Y/[/a/b/dX-|-`-j.g/VR.i-{V/X.{/Y/bR.`-lQrOR#vrQ&c#|R(q&cS%n#R$OS(Y%n(]T(]%q&eQ%b!zQ%i!}W'z%b%i(P(TQ(P%fR(T%kQ&n$YR(w&nQ(`%rQ*g(ZT*m(`*gQ'i%PR*P'iS'l%S%TY*T'l*U+|,|-pU*U'm'n'oU+|*V*W*XS,|+},OR-p,}Q#Y]R%u#YQ#]^R%w#]Q#`_R%{#`Q(c%xS*r(c*sR*s(dQ*u(eR,[*uQ#c`R%}#cQ#eaR&O#eQ#gbR&P#gQ#icR&Q#iQ#lfQ&S#jW&V#l&S(t*yQ(t&hR*y/mQ$VwS&j$V&kR&k$WQ&x$dR)T&xQ&[#qR(m&[Q$`!PR&r$`Q*}({S,a*}-VR-V,bQ&v$bR)Q&vQ#ojR&X#oQ+c)cR,i+cQ)U&yR+T)UQ&|$hS)]&|)^R)^&}Q'U$oR)d'UQ'Z$pS)m'Z+lR+l)nQ+r)sR,t+rWnOr)c+cR#snQ,v+uR-^,vd.S-e.h.o.t/S/U/W/c/g/hR.n.SU-z-`.g/VR.f-zQ/R.tS/_/R/`R/`/SS.|.h.iR/Z.|Q.U-eR.q.USqOrT+b)c+cWpOr)c+cR'S$nYjOr$n)c+cR&W#n[wOr#n$n)c+cR&i$U&YPOXYZhrtv|}!R!S!T!X!j!l!p!q!r!t!u#^#k#n$Q$S$U$X$l$n%O%T%[%_%a%h%m%o%y&R&`&d&o&p&w'O'V'Y'g'h'k'm'n'r'y(R(X(_(b(i(k(s)S)V)`)c)l)v*O*R*S*V*]*^*`*b*e*f*i*p*q*x*{+S+c+j+k+n+v+w+x+z+{,O,Q,S,U,W,Y,Z,],o,q,x,{-O-n-o.b.y/i/j/k/l/n/o/p/q/t/xQ!oSQ#jeQ#wsU$Yx%d'}S$h!U$kQ$t![Q$v!dQ$w!eQ$x!fQ$y!gQ$z!hQ${!iQ%f!{Q%k#OQ%q#SQ%r#TQ&e$PQ&}$iQ'd$uQ(j&TU(u&m(v*zW)Y&{)[+[+]Q*Z'wQ*d(WQ+Z)ZQ,V*lQ.w.^R/m/rQ!zXQ!}YQ$f!SQ$g!T^'v%a%h'y(R*]*`*bR+W)V[fOr#n$n)c+ch!wXY!S!T%a%h'y(R)V*]*`*bQ#RZQ#mhS$Ov|Q$]}W$d!R$X'O)`S$p!X$lW$|!j'h*O+vQ%S!lQ%x#^`&U#k&R(i(k(s*x,]/qQ&f$QQ&g$SQ&h$UQ'e%OQ'o%TQ'u%_W(V%m(X*e*iQ(Z%oQ(d%yQ(o&`S(r&d/oQ(x&oQ(y&pU)R&w)S+SQ)h'VY)k'Y)l+j+k,oQ)|'g^*Q'k*S+z+{,{-o.bQ*W'mQ*X'nS*Y'r/pW*k(_*f,S,WW*o(b*q,Y,ZQ+t)vQ+y*RQ+}*VQ,X*pQ,^*{Q,p+nQ,y+wQ,z+xQ,},OQ-R,UQ-[,qQ-m,xR.a-nhTOr#k#n$n&R&d'r(i(k)c+c$z!vXYZhv|}!R!S!T!X!j!l#^$Q$S$U$X$l%O%T%_%a%h%m%o%y&`&o&p&w'O'V'Y'g'h'k'm'n'y(R(X(_(b(s)S)V)`)l)v*O*R*S*V*]*`*b*e*f*i*p*q*x*{+S+j+k+n+v+w+x+z+{,O,S,U,W,Y,Z,],o,q,x,{-n-o.b/o/p/qQ#xtW%X!p!t/j/tQ%Y!qQ%Z!rQ%]!uQ%g/iS'q%[/nQ's/kQ't/lQ,P*^Q-Q,QS-q-O.yR/v/xU#|u-s/wR(p&b[gOr#n$n)c+cX!yX#^$U$XQ#WZQ$RvR$[|Q%c!zQ%j!}Q%p#RQ'e$|Q(Q%fQ(U%kQ(^%qQ(a%rQ*h(ZQ-P,PQ-u-QR.d-tQ$ZxQ'|%dR*_'}Q-t-OR/T.yR#QYR#VZR%R!jQ%P!jV)}'h*O+v!]!mP!o#j#w$Y$h$t$v$w$x$y$z${%f%k%q%r&e&}'d(j(u)Y*Z*d+Z,V.w/mR%U!lR%z#^Q(g%zR*w(hQ$e!RQ&l$XQ)_'OR+_)`Q#rlQ$^!OQ$a!PR&t$`Q(z&sR+Q(}Q(z&sQ+P(|R+Q(}R$c!QXpOr)c+cQ$j!UR'P$kQ$q!XR'Q$lR)u'^Q)s'^V,r+q,s-]Q-l,wQ.W-fR.X-gU-e,w-f-gQ.]-iQ.h-{Q.m.RU.o.T.p/PQ.t.YQ/S.uQ/U.zU/W.{/Y/bQ/c/[Q/g/aR/h/dR.[-hR.j-{",
-     nodeNames: "⚠ print Comment Script AssignStatement * BinaryExpression BitOp BitOp BitOp BitOp ArithOp ArithOp @ ArithOp ** UnaryExpression ArithOp BitOp AwaitExpression await ) ( ParenthesizedExpression BinaryExpression or and CompareOp in not is UnaryExpression ConditionalExpression if else LambdaExpression lambda ParamList VariableName AssignOp , : NamedExpression AssignOp YieldExpression yield from TupleExpression ComprehensionExpression async for LambdaExpression ] [ ArrayExpression ArrayComprehensionExpression } { DictionaryExpression DictionaryComprehensionExpression SetExpression SetComprehensionExpression CallExpression ArgList AssignOp MemberExpression . PropertyName Number String FormatString FormatReplacement FormatConversion FormatSpec ContinuedString Ellipsis None Boolean TypeDef AssignOp UpdateStatement UpdateOp ExpressionStatement DeleteStatement del PassStatement pass BreakStatement break ContinueStatement continue ReturnStatement return YieldStatement PrintStatement RaiseStatement raise ImportStatement import as ScopeStatement global nonlocal AssertStatement assert StatementGroup ; IfStatement Body elif WhileStatement while ForStatement TryStatement try except finally WithStatement with FunctionDefinition def ParamList AssignOp TypeDef ClassDefinition class DecoratedStatement Decorator At MatchStatement match MatchBody MatchClause case CapturePattern LiteralPattern ArithOp ArithOp AsPattern OrPattern LogicOp AttributePattern SequencePattern MappingPattern StarPattern ClassPattern PatternArgList KeywordPattern KeywordPattern Guard",
-     maxTerm: 267,
+     states: "#!OO`Q#yOOP$_OSOOO%hQ&nO'#H^OOQS'#Cq'#CqOOQS'#Cr'#CrO'WQ#xO'#CpO(yQ&nO'#H]OOQS'#H^'#H^OOQS'#DW'#DWOOQS'#H]'#H]O)gQ#xO'#DaO)zQ#xO'#DhO*[Q#xO'#DlOOQS'#Dw'#DwO*oO,UO'#DwO*wO7[O'#DwO+POWO'#DxO+[O`O'#DxO+gOpO'#DxO+rO!bO'#DxO-tQ&nO'#G}OOQS'#G}'#G}O'WQ#xO'#G|O/WQ&nO'#G|OOQS'#Ee'#EeO/oQ#xO'#EfOOQS'#G{'#G{O/yQ#xO'#GzOOQV'#Gz'#GzO0UQ#xO'#FXOOQS'#G`'#G`O0ZQ#xO'#FWOOQV'#IS'#ISOOQV'#Gy'#GyOOQV'#Fp'#FpQ`Q#yOOO'WQ#xO'#CsO0iQ#xO'#DPO0pQ#xO'#DTO1OQ#xO'#HbO1`Q&nO'#EYO'WQ#xO'#EZOOQS'#E]'#E]OOQS'#E_'#E_OOQS'#Ea'#EaO1tQ#xO'#EcO2[Q#xO'#EgO0UQ#xO'#EiO2oQ&nO'#EiO0UQ#xO'#ElO/oQ#xO'#EoO/oQ#xO'#EsO/oQ#xO'#EvO2zQ#xO'#ExO3RQ#xO'#E}O3^Q#xO'#EyO/oQ#xO'#E}O0UQ#xO'#FPO0UQ#xO'#FUO3cQ#xO'#FZP3jO#xO'#GxPOOO)CBl)CBlOOQS'#Cg'#CgOOQS'#Ch'#ChOOQS'#Ci'#CiOOQS'#Cj'#CjOOQS'#Ck'#CkOOQS'#Cl'#ClOOQS'#Cn'#CnO'WQ#xO,59QO'WQ#xO,59QO'WQ#xO,59QO'WQ#xO,59QO'WQ#xO,59QO'WQ#xO,59QO3uQ#xO'#DqOOQS,5:[,5:[O4YQ#xO'#HlOOQS,5:_,5:_O4gQMlO,5:_O4lQ&nO,59[O0iQ#xO,59dO0iQ#xO,59dO0iQ#xO,59dO7[Q#xO,59dO7aQ#xO,59dO7hQ#xO,59lO7oQ#xO'#H]O8uQ#xO'#H[OOQS'#H['#H[OOQS'#D^'#D^O9^Q#xO,59cO'WQ#xO,59cO9lQ#xO,59cOOQS,59{,59{O9qQ#xO,5:TO'WQ#xO,5:TOOQS,5:S,5:SO:PQ#xO,5:SO:UQ#xO,5:ZO'WQ#xO,5:ZO'WQ#xO,5:XOOQS,5:W,5:WO:gQ#xO,5:WO:lQ#xO,5:YOOOO'#Fx'#FxO:qO,UO,5:cOOQS,5:c,5:cOOOO'#Fy'#FyO:yO7[O,5:cO;RQ#xO'#DyOOOW'#Fz'#FzO;cOWO,5:dOOQS,5:d,5:dO;RQ#xO'#D}OOO`'#F}'#F}O;nO`O,5:dO;RQ#xO'#EOOOOp'#GO'#GOO;yOpO,5:dO;RQ#xO'#EPOOO!b'#GP'#GPO<UO!bO,5:dOOQS'#GQ'#GQO<aQ&nO,5:lO?RQ&nO,5=hO?lQ!LUO,5=hO@]Q&nO,5=hOOQS,5;Q,5;QO@tQ#yO'#GYOBTQ#xO,5;]OOQV,5=f,5=fOB`Q&nO'#IOOBwQ#xO,5;sOOQS-E:^-E:^OOQV,5;r,5;rO3XQ#xO'#FPOOQV-E9n-E9nOCPQ&nO,59_OEWQ&nO,59kOEqQ#xO'#H_OE|Q#xO'#H_O0UQ#xO'#H_OFXQ#xO'#DVOFaQ#xO,59oOFfQ#xO'#HcO'WQ#xO'#HcO/oQ#xO,5=|OOQS,5=|,5=|O/oQ#xO'#EUOOQS'#EV'#EVOGTQ#xO'#GSOGeQ#xO,59OOGeQ#xO,59OO)mQ#xO,5:rOGsQ&nO'#HeOOQS,5:u,5:uOOQS,5:},5:}OHWQ#xO,5;ROHiQ#xO,5;TOOQS'#GV'#GVOHwQ&nO,5;TOIVQ#xO,5;TOI[Q#xO'#IROOQS,5;W,5;WOIjQ#xO'#H}OOQS,5;Z,5;ZO3^Q#xO,5;_O3^Q#xO,5;bOI{Q&nO'#ITO'WQ#xO'#ITOJVQ#xO,5;dO2zQ#xO,5;dO/oQ#xO,5;iO0UQ#xO,5;kOJ[Q#yO'#EtOKeQ#{O,5;eONvQ#xO'#IUO3^Q#xO,5;iO! RQ#xO,5;kO! WQ#xO,5;pO! `Q&nO,5;uO'WQ#xO,5;uPOOO,5=d,5=dP! gOSO,5=dP! lO#xO,5=dO!$aQ&nO1G.lO!$hQ&nO1G.lO!'XQ&nO1G.lO!'cQ&nO1G.lO!)|Q&nO1G.lO!*aQ&nO1G.lO!*tQ#xO'#HkO!+SQ&nO'#G}O/oQ#xO'#HkO!+^Q#xO'#HjOOQS,5:],5:]O!+fQ#xO,5:]O!+kQ#xO'#HmO!+vQ#xO'#HmO!,ZQ#xO,5>WOOQS'#Du'#DuOOQS1G/y1G/yOOQS1G/O1G/OO!-ZQ&nO1G/OO!-bQ&nO1G/OO0iQ#xO1G/OO!-}Q#xO1G/WOOQS'#D]'#D]O/oQ#xO,59vOOQS1G.}1G.}O!.UQ#xO1G/gO!.fQ#xO1G/gO!.nQ#xO1G/hO'WQ#xO'#HdO!.sQ#xO'#HdO!.xQ&nO1G.}O!/YQ#xO,59kO!0`Q#xO,5>SO!0pQ#xO,5>SO!0xQ#xO1G/oO!0}Q&nO1G/oOOQS1G/n1G/nO!1_Q#xO,5=}O!2UQ#xO,5=}O/oQ#xO1G/sO!2sQ#xO1G/uO!2xQ&nO1G/uO!3YQ&nO1G/sOOQS1G/r1G/rOOQS1G/t1G/tOOOO-E9v-E9vOOQS1G/}1G/}OOOO-E9w-E9wO!3jQ#xO'#HwO/oQ#xO'#HwO!3xQ#xO,5:eOOOW-E9x-E9xOOQS1G0O1G0OO!4TQ#xO,5:iOOO`-E9{-E9{O!4`Q#xO,5:jOOOp-E9|-E9|O!4kQ#xO,5:kOOO!b-E9}-E9}OOQS-E:O-E:OO!4vQ!LUO1G3SO!5gQ&nO1G3SO'WQ#xO,5<mOOQS,5<m,5<mOOQS-E:P-E:POOQS,5<t,5<tOOQS-E:W-E:WOOQV1G0w1G0wO0UQ#xO'#GUO!6OQ&nO,5>jOOQS1G1_1G1_O!6gQ#xO1G1_OOQS'#DX'#DXO/oQ#xO,5=yOOQS,5=y,5=yO!6lQ#xO'#FqO!6wQ#xO,59qO!7PQ#xO1G/ZO!7ZQ&nO,5=}OOQS1G3h1G3hOOQS,5:p,5:pO!7zQ#xO'#G|OOQS,5<n,5<nOOQS-E:Q-E:QO!8]Q#xO1G.jOOQS1G0^1G0^O!8kQ#xO,5>PO!8{Q#xO,5>PO/oQ#xO1G0mO/oQ#xO1G0mO0UQ#xO1G0oOOQS-E:T-E:TO!9^Q#xO1G0oO!9iQ#xO1G0oO!9nQ#xO,5>mO!9|Q#xO,5>mO!:[Q#xO,5>iO!:rQ#xO,5>iO!;TQ#{O1G0yO!>cQ#{O1G0|O!AnQ#xO,5>oO!AxQ#xO,5>oO!BQQ&nO,5>oO/oQ#xO1G1OO!B[Q#xO1G1OO3^Q#xO1G1TO! RQ#xO1G1VOOQV,5;`,5;`O!BaQ#zO,5;`O!BfQ#{O1G1PO!EwQ#xO'#G]O3^Q#xO1G1PO3^Q#xO1G1PO!FUQ#xO,5>pO!FcQ#xO,5>pO0UQ#xO,5>pOOQV1G1T1G1TO!FkQ#xO'#FRO!F|QMlO1G1VOOQV1G1[1G1[O3^Q#xO1G1[O!GUQ#xO'#F]OOQV1G1a1G1aO! `Q&nO1G1aPOOO1G3O1G3OP!GZOSO1G3OOOQS,5>V,5>VOOQS'#Dr'#DrO/oQ#xO,5>VO!G`Q#xO,5>UO!GsQ#xO,5>UOOQS1G/w1G/wO!G{Q#xO,5>XO!H]Q#xO,5>XO!HeQ#xO,5>XO!HxQ#xO,5>XO!IYQ#xO,5>XOOQS1G3r1G3rOOQS7+$j7+$jO!7PQ#xO7+$rO!J{Q#xO1G/OO!KSQ#xO1G/OOOQS1G/b1G/bOOQS,5<_,5<_O'WQ#xO,5<_OOQS7+%R7+%RO!KZQ#xO7+%ROOQS-E9q-E9qOOQS7+%S7+%SO!KkQ#xO,5>OO'WQ#xO,5>OOOQS7+$i7+$iO!KpQ#xO7+%RO!KxQ#xO7+%SO!K}Q#xO1G3nOOQS7+%Z7+%ZO!L_Q#xO1G3nO!LgQ#xO7+%ZOOQS,5<^,5<^O'WQ#xO,5<^O!LlQ#xO1G3iOOQS-E9p-E9pO!McQ#xO7+%_OOQS7+%a7+%aO!MqQ#xO1G3iO!N`Q#xO7+%aO!NeQ#xO1G3oO!NuQ#xO1G3oO!N}Q#xO7+%_O# SQ#xO,5>cO# jQ#xO,5>cO# jQ#xO,5>cO# xO$ISO'#D{O#!TO#tO'#HxOOOW1G0P1G0PO#!YQ#xO1G0POOO`1G0T1G0TO#!bQ#xO1G0TOOOp1G0U1G0UO#!jQ#xO1G0UOOO!b1G0V1G0VO#!rQ#xO1G0VO#!zQ!LUO7+(nO##kQ&nO1G2XP#$UQ#xO'#GROOQS,5<p,5<pOOQS-E:S-E:SOOQS7+&y7+&yOOQS1G3e1G3eOOQS,5<],5<]OOQS-E9o-E9oOOQS7+$u7+$uO#$cQ#xO,5=hO#$|Q#xO,5=hO#%_Q&nO,5<`O#%rQ#xO1G3kOOQS-E9r-E9rOOQS7+&X7+&XO#&SQ#xO7+&XOOQS7+&Z7+&ZO#&bQ#xO'#IQO0UQ#xO'#IPO#&vQ#xO7+&ZOOQS,5<s,5<sO#'RQ#xO1G4XOOQS-E:V-E:VOOQS,5<o,5<oO#'aQ#xO1G4TOOQS-E:R-E:RO#'wQ#{O7+&eO!EwQ#xO'#GZO3^Q#xO7+&eO3^Q#xO7+&hO#+VQ&nO,5<vO'WQ#xO,5<vO#+aQ#xO1G4ZOOQS-E:Y-E:YO#+kQ#xO1G4ZO3^Q#xO7+&jO/oQ#xO7+&jOOQV7+&o7+&oO!F|QMlO7+&qO`Q#yO1G0zOOQV-E:Z-E:ZO3^Q#xO7+&kO3^Q#xO7+&kOOQV,5<w,5<wO#+sQ#xO,5<wOOQV7+&k7+&kO#,OQ#{O7+&kO#/ZQ#xO,5<xO#/fQ#xO1G4[OOQS-E:[-E:[O#/sQ#xO1G4[O#/{Q#xO'#IWO#0ZQ#xO'#IWO0UQ#xO'#IWOOQS'#IW'#IWO#0fQ#xO'#IVOOQS,5;m,5;mO#0nQ#xO,5;mO/oQ#xO'#FTOOQV7+&q7+&qO3^Q#xO7+&qOOQV7+&v7+&vO#0sQ#zO,5;wOOQV7+&{7+&{POOO7+(j7+(jOOQS1G3q1G3qOOQS,5<b,5<bO#0xQ#xO1G3pOOQS-E9t-E9tO#1]Q#xO,5<cO#1hQ#xO,5<cO#1{Q#xO1G3sOOQS-E9u-E9uO#2]Q#xO1G3sO#2eQ#xO1G3sO#2uQ#xO1G3sO#2]Q#xO1G3sOOQS<<H^<<H^O#3QQ&nO1G1yOOQS<<Hm<<HmP#3_Q#xO'#FsO7hQ#xO1G3jO#3lQ#xO1G3jO#3qQ#xO<<HmOOQS<<Hn<<HnO#4RQ#xO7+)YOOQS<<Hu<<HuO#4cQ&nO1G1xP#5SQ#xO'#FrO#5aQ#xO7+)ZO#5qQ#xO7+)ZO#5yQ#xO<<HyO#6OQ#xO7+)TOOQS<<H{<<H{O#6uQ#xO,5<aO'WQ#xO,5<aOOQS-E9s-E9sOOQS<<Hy<<HyOOQS,5<g,5<gO/oQ#xO,5<gO#6zQ#xO1G3}OOQS-E9y-E9yO#7bQ#xO1G3}O;RQ#xO'#D|OOOO'#F|'#F|O#7pO$ISO,5:gOOO#l,5>d,5>dOOOW7+%k7+%kOOO`7+%o7+%oOOOp7+%p7+%pOOO!b7+%q7+%qO#7{Q#xO1G3SO#8fQ#xO1G3SP'WQ#xO'#FtO/oQ#xO<<IsO#8wQ#xO,5>lO#9YQ#xO,5>lO0UQ#xO,5>lO#9kQ#xO,5>kOOQS<<Iu<<IuP0UQ#xO'#GXP/oQ#xO'#GTOOQV-E:X-E:XO3^Q#xO<<JPOOQV,5<u,5<uO3^Q#xO,5<uOOQV<<JP<<JPOOQV<<JS<<JSO#9pQ&nO1G2bP#9zQ#xO'#G[O#:RQ#xO7+)uO#:]Q#{O<<JUO3^Q#xO<<JUOOQV<<J]<<J]O3^Q#xO<<J]O#=hQ#{O7+&fOOQV<<JV<<JVO#=rQ#{O<<JVOOQV1G2c1G2cO0UQ#xO1G2cO3^Q#xO<<JVO0UQ#xO1G2dP/oQ#xO'#G^O#@}Q#xO7+)vO#A[Q#xO7+)vOOQS'#FS'#FSO/oQ#xO,5>rO#AdQ#xO,5>rOOQS,5>r,5>rO#AoQ#xO,5>qO#BQQ#xO,5>qOOQS1G1X1G1XOOQS,5;o,5;oO#BYQ#xO1G1cP#B_Q#xO'#FvO#BoQ#xO1G1}O#CSQ#xO1G1}O#CdQ#xO1G1}P#CoQ#xO'#FwO#C|Q#xO7+)_O#D^Q#xO7+)_O#D^Q#xO7+)_O#DfQ#xO7+)_O#DvQ#xO7+)UO7hQ#xO7+)UOOQSAN>XAN>XO#EaQ#xO<<LuOOQSAN>eAN>eO/oQ#xO1G1{O#EqQ&nO1G1{P#E{Q#xO'#FuOOQS1G2R1G2RP#FYQ#xO'#F{O#FgQ#xO7+)iO#F}Q#xO,5:hOOOO-E9z-E9zO#GYQ#xO7+(nOOQSAN?_AN?_O#GsQ#xO,5<rO#HXQ#xO1G4WOOQS-E:U-E:UO#HjQ#xO1G4WOOQS1G4V1G4VOOQVAN?kAN?kOOQV1G2a1G2aO3^Q#xOAN?pO#H{Q#{OAN?pOOQVAN?wAN?wOOQV<<JQ<<JQO3^Q#xOAN?qO3^Q#xO7+'}OOQVAN?qAN?qOOQS7+(O7+(OO#LWQ#xO<<MbOOQS1G4^1G4^O/oQ#xO1G4^OOQS,5<y,5<yO#LeQ#xO1G4]OOQS-E:]-E:]OOQU'#Ga'#GaO#LvQ#zO7+&}O#MRQ#xO'#F^O#MyQ#xO7+'iO#NZQ#xO7+'iOOQS7+'i7+'iO#NfQ#xO<<LyO#NvQ#xO<<LyO#NvQ#xO<<LyO$ OQ#xO'#HfOOQS<<Lp<<LpO$ YQ#xO<<LpOOQS7+'g7+'gOOOO1G0S1G0SO$ sQ#xO1G0SO0UQ#xO1G2^P0UQ#xO'#GWO$ {Q#xO7+)rO$!^Q#xO7+)rOOQVG25[G25[O3^Q#xOG25[OOQVG25]G25]OOQV<<Ki<<KiOOQS7+)x7+)xP$!oQ#xO'#G_OOQU-E:_-E:_OOQV<<Ji<<JiO$#cQ&nO'#F`OOQS'#Fb'#FbO$#sQ#xO'#FaO$$eQ#xO'#FaOOQS'#Fa'#FaO$$jQ#xO'#IYO#MRQ#xO'#FhO#MRQ#xO'#FhO$%RQ#xO'#FiO#MRQ#xO'#FjO$%YQ#xO'#IZOOQS'#IZ'#IZO$%wQ#xO,5;xOOQS<<KT<<KTO$&PQ#xO<<KTO$&aQ#xOANBeO$&qQ#xOANBeO$&yQ#xO'#HgOOQS'#Hg'#HgO0pQ#xO'#DeO$'dQ#xO,5>QOOQSANB[ANB[OOOO7+%n7+%nOOQS7+'x7+'xO$'{Q#xO<<M^OOQVLD*vLD*vO4gQMlO'#GcO$(^Q&nO,5<RO#MRQ#xO'#FlOOQS,5<V,5<VOOQS'#Fc'#FcO$)OQ#xO,5;{O$)TQ#xO,5;{OOQS'#Ff'#FfO#MRQ#xO'#GbO$)uQ#xO,5<PO$*aQ#xO,5>tO$*qQ#xO,5>tO0UQ#xO,5<OO$+SQ#xO,5<SO$+XQ#xO,5<SO#MRQ#xO'#I[O$+^Q#xO'#I[O$+cQ#xO,5<TOOQS,5<U,5<UO'WQ#xO'#FoOOQU1G1d1G1dO3^Q#xO1G1dOOQSAN@oAN@oO$+hQ#xOG28PO$+xQ#xO,5:POOQS1G3l1G3lOOQS,5<},5<}OOQS-E:a-E:aO$+}Q&nO'#F`O$,UQ#xO'#I]O$,dQ#xO'#I]O$,lQ#xO,5<WOOQS1G1g1G1gO$,qQ#xO1G1gO$,vQ#xO,5<|OOQS-E:`-E:`O$-bQ#xO,5=QO$-yQ#xO1G4`OOQS-E:d-E:dOOQS1G1j1G1jOOQS1G1n1G1nO$.ZQ#xO,5>vO#MRQ#xO,5>vOOQS1G1o1G1oO$.iQ&nO,5<ZOOQU7+'O7+'OO$ OQ#xO1G/kO#MRQ#xO,5<XO$.pQ#xO,5>wO$.wQ#xO,5>wOOQS1G1r1G1rOOQS7+'R7+'RP#MRQ#xO'#GfO$/PQ#xO1G4bO$/ZQ#xO1G4bO$/cQ#xO1G4bOOQS7+%V7+%VO$/qQ#xO1G1sO$0PQ&nO'#F`O$0WQ#xO,5=POOQS,5=P,5=PO$0fQ#xO1G4cOOQS-E:c-E:cO#MRQ#xO,5=OO$0mQ#xO,5=OO$0rQ#xO7+)|OOQS-E:b-E:bO$0|Q#xO7+)|O#MRQ#xO,5<YP#MRQ#xO'#GeO$1UQ#xO1G2jO#MRQ#xO1G2jP$1dQ#xO'#GdO$1kQ#xO<<MhO$1uQ#xO1G1tO$2TQ#xO7+(UO7hQ#xO'#DPO7hQ#xO,59dO7hQ#xO,59dO7hQ#xO,59dO$2cQ&nO,5=hO7hQ#xO1G/OO/oQ#xO1G/ZO/oQ#xO7+$rP$2vQ#xO'#GRO'WQ#xO'#G|O$3TQ#xO,59dO$3YQ#xO,59dO$3aQ#xO,59oO$3fQ#xO1G/WO0pQ#xO'#DTO7hQ#xO,59l",
+     stateData: "$3w~O%kOS%`OSUOS%_PQ~OPiOXfOhtOjYOquOu!TOxvO!RwO!S!QO!V!WO!W!VO!ZZO!_[O!jeO!ueO!veO!weO#OyO#QzO#S{O#U|O#W}O#[!OO#^!PO#a!RO#b!RO#d!SO#k!UO#n!XO#r!YO#t!ZO#y![O#|mO$O!]O%wRO%xRO%|SO%}WO&c]O&d^O&g_O&j`O&naO&obO&pcO~O%_!^O~OX!eOa!eOc!fOj!mO!Z!oO!h!qO%r!`O%s!aO%t!bO%u!cO%v!cO%w!dO%x!dO%y!eO%z!eO%{!eO~Om&QXn&QXo&QXp&QXq&QXr&QXu&QX|&QX}&QX!{&QX#f&QX%^&QX%a&QX&S&QXi&QX!V&QX!W&QX&T&QX!Y&QX!^&QX!S&QX#_&QXv&QX!n&QX~P$dOhtOjYO!ZZO!_[O!jeO!ueO!veO!weO%wRO%xRO%|SO%}WO&c]O&d^O&g_O&j`O&naO&obO&pcO~O|&PX}&PX#f&PX%^&PX%a&PX&S&PX~Om!tOn!uOo!sOp!sOq!vOr!wOu!xO!{&PX~P(eOX#OOi#QOq0VOx0eO!RwO~P'WOX#SOq0VOx0eO!Y#TO~P'WOX#WOc#XOq0VOx0eO!^#YO~P'WO&e#]O&f#_O~O&h#`O&i#_O~OQ#bO%b#cO%c#eO~OR#fO%d#gO%e#eO~OS#iO%f#jO%g#eO~OT#lO%h#mO%i#eO~OX%qXa%qXc%qXj%qXm%qXn%qXo%qXp%qXq%qXr%qXu%qX|%qX!Z%qX!h%qX%r%qX%s%qX%t%qX%u%qX%v%qX%w%qX%x%qX%y%qX%z%qX%{%qXi%qX!V%qX!W%qX~O&c]O&d^O&g_O&j`O&naO&obO&pcO}%qX!{%qX#f%qX%^%qX%a%qX&S%qX&T%qX!Y%qX!^%qX!S%qX#_%qXv%qX!n%qX~P+}O|#rO}%pX!{%pX#f%pX%^%pX%a%pX&S%pX~Oq0VOx0eO~P'WO#f#uO%^#wO%a#wO~O%}WO~O!V#|O#t!ZO#y![O#|mO~OquO~P'WOX$ROc$SO%}WO}yP~OX$WOq0VOx0eO!S$XO~P'WO}$ZO!{$`O&S$[O#f!|X%^!|X%a!|X~OX$WOq0VOx0eO#f#VX%^#VX%a#VX~P'WOq0VOx0eO#f#ZX%^#ZX%a#ZX~P'WO!h$fO!u$fO%}WO~OX$pO~P'WO!W$rO#r$sO#t$tO~O}$uO~OX$|O~P'WOU%OO%^$}O%k%PO~OX%YOc%YOi%[Oq0VOx0eO~P'WOq0VOx0eO}%_O~P'WO&b%aO~Oc!fOj!mO!Z!oO!h!qOXdaadamdandaodapdaqdardauda|da}da!{da#fda%^da%ada%rda%sda%tda%uda%vda%wda%xda%yda%zda%{da&Sdaida!Vda!Wda&Tda!Yda!^da!Sda#_davda!nda~Op%fO~Oq%fO~P'WOq0VO~P'WOm0XOn0YOo0WOp0WOq0aOr0bOu0fOi&PX!V&PX!W&PX&T&PX!Y&PX!^&PX!S&PX#_&PX!n&PX~P(eO&T%hOi&OX|&OX!V&OX!W&OX!Y&OX}&OX~Oi%jO|%kO!V%oO!W%nO~Oi%jO~O|%rO!V%oO!W%nO!Y&[X~O!Y%vO~O|%wO}%yO!V%oO!W%nO!^&VX~O!^%}O~O!^&OO~O&e#]O&f&QO~O&h#`O&i&QO~OX&TOq0VOx0eO!RwO~P'WOQ#bO%b#cO%c&WO~OR#fO%d#gO%e&WO~OS#iO%f#jO%g&WO~OT#lO%h#mO%i&WO~OX!taa!tac!taj!tam!tan!tao!tap!taq!tar!tau!ta|!ta}!ta!Z!ta!h!ta!{!ta#f!ta%^!ta%a!ta%r!ta%s!ta%t!ta%u!ta%v!ta%w!ta%x!ta%y!ta%z!ta%{!ta&S!tai!ta!V!ta!W!ta&T!ta!Y!ta!^!ta!S!ta#_!tav!ta!n!ta~P#vO|&`O}%pa!{%pa#f%pa%^%pa%a%pa&S%pa~P$dOX&bOquOxvO}%pa!{%pa#f%pa%^%pa%a%pa&S%pa~P'WO|&`O}%pa!{%pa#f%pa%^%pa%a%pa&S%pa~OPiOXfOquOxvO!RwO!S!QO#OyO#QzO#S{O#U|O#W}O#[!OO#^!PO#a!RO#b!RO#d!SO#f$|X%^$|X%a$|X~P'WO#f#uO%^&gO%a&gO~O!h&hOj&rX%^&rX#_&rX#f&rX%a&rX#^&rX~Oj!mO%^&jO~Omgangaogapgaqgargauga|ga}ga!{ga#fga%^ga%aga&Sgaiga!Vga!Wga&Tga!Yga!^ga!Sga#_gavga!nga~P$dOusa|sa}sa#fsa%^sa%asa&Ssa~Om!tOn!uOo!sOp!sOq!vOr!wO!{sa~PDoO&S&lO|&RX}&RX~O%}WO|&RX}&RX~O|&oO}yX~O}&qO~O|%wO#f&VX%^&VX%a&VXi&VX}&VX!^&VX!n&VX&S&VX~OX0`Oq0VOx0eO!RwO~P'WO&S$[O#fWa%^Wa%aWa~O|&zO#f&XX%^&XX%a&XXp&XX~P$dO|&}O!S&|O#f#Za%^#Za%a#Za~O#_'OO#f#]a%^#]a%a#]a~O!h$fO!u$fO#^'QO%}WO~O#^'QO~O|'SO#f&uX%^&uX%a&uX~O|'UO#f&qX%^&qX%a&qX}&qX~O|'YOp&wX~P$dOp']O~OPiOXfOquOxvO!RwO!S!QO#OyO#QzO#S{O#U|O#W}O#[!OO#^!PO#a!RO#b!RO#d!SO%^'bO~P'WOv'fO#o'dO#p'eOP#maX#mah#maj#maq#mau#max#ma!R#ma!S#ma!V#ma!W#ma!Z#ma!_#ma!j#ma!u#ma!v#ma!w#ma#O#ma#Q#ma#S#ma#U#ma#W#ma#[#ma#^#ma#a#ma#b#ma#d#ma#k#ma#n#ma#r#ma#t#ma#y#ma#|#ma$O#ma%Z#ma%w#ma%x#ma%|#ma%}#ma&c#ma&d#ma&g#ma&j#ma&n#ma&o#ma&p#ma%]#ma%a#ma~O|'gO#_'iO}&xX~Oj'kO~Oj!mO}$uO~O}'oO~P$dO%^'rO~OU'sO%^'rO~OX!eOa!eOc!fOj!mO!Z!oO!h!qO%t!bO%u!cO%v!cO%w!dO%x!dO%y!eO%z!eO%{!eOmYinYioYipYiqYirYiuYi|Yi}Yi!{Yi#fYi%^Yi%aYi%rYi&SYiiYi!VYi!WYi&TYi!YYi!^Yi!SYi#_YivYi!nYi~O%s!aO~P! tO%sYi~P! tOX!eOa!eOc!fOj!mO!Z!oO!h!qO%w!dO%x!dO%y!eO%z!eO%{!eOmYinYioYipYiqYirYiuYi|Yi}Yi!{Yi#fYi%^Yi%aYi%rYi%sYi%tYi&SYiiYi!VYi!WYi&TYi!YYi!^Yi!SYi#_YivYi!nYi~O%u!cO%v!cO~P!$oO%uYi%vYi~P!$oOc!fOj!mO!Z!oO!h!qOmYinYioYipYiqYirYiuYi|Yi}Yi!{Yi#fYi%^Yi%aYi%rYi%sYi%tYi%uYi%vYi%wYi%xYi&SYiiYi!VYi!WYi&TYi!YYi!^Yi!SYi#_YivYi!nYi~OX!eOa!eO%y!eO%z!eO%{!eO~P!'mOXYiaYi%yYi%zYi%{Yi~P!'mO!V%oO!W%nOi&_X|&_X~O&S'uO&T'uO~P+}O|'wOi&^X~Oi'yO~O|'zO}'|O!Y&aX~Oq0VOx0eO|'zO}'}O!Y&aX~P'WO!Y(PO~Oo!sOp!sOq!vOr!wOmliuli|li}li!{li#fli%^li%ali&Sli~On!uO~P!,`Onli~P!,`Om0XOn0YOo0WOp0WOq0aOr0bO~Ov(RO~P!-iOX(WOi(XOq0VOx0eO~P'WOi(XO|(YO~Oi([O~O!W(^O~Oi(_O|(YO!V%oO!W%nO~P$dOm0XOn0YOo0WOp0WOq0aOr0bOisa!Vsa!Wsa&Tsa!Ysa!^sa!Ssa#_savsa!nsa~PDoOX(WOq0VOx0eO!Y&[a~P'WO|(bO!Y&[a~O!Y(cO~O|(bO!V%oO!W%nO!Y&[a~P$dOX(gOq0VOx0eO!^&Va#f&Va%^&Va%a&Vai&Va}&Va!n&Va&S&Va~P'WO|(hO!^&Va#f&Va%^&Va%a&Vai&Va}&Va!n&Va&S&Va~O!^(kO~O|(hO!V%oO!W%nO!^&Va~P$dO|(nO!V%oO!W%nO!^&]a~P$dO|(qO}&kX!^&kX!n&kX~O}(tO!^(vO!n(wO~O}(tO!^(xO!n(yO~O}(tO!^(zO!n({O~O}(tO!^(|O!n(}O~OX&bOquOxvO}%pi!{%pi#f%pi%^%pi%a%pi&S%pi~P'WO|)OO}%pi!{%pi#f%pi%^%pi%a%pi&S%pi~O!h&hOj&ra%^&ra#_&ra#f&ra%a&ra#^&ra~O%^)TO~OX$ROc$SO%}WO~O|&oO}ya~OquOxvO~P'WO|(hO#f&Va%^&Va%a&Vai&Va}&Va!^&Va!n&Va&S&Va~P$dO|)YO#f%pX%^%pX%a%pX&S%pX~O&S$[O#fWi%^Wi%aWi~O#f&Xa%^&Xa%a&Xap&Xa~P'WO|)]O#f&Xa%^&Xa%a&Xap&Xa~OX)aOj)cO%}WO~O#^)dO~O%}WO#f&ua%^&ua%a&ua~O|)fO#f&ua%^&ua%a&ua~Oq0VOx0eO#f&qa%^&qa%a&qa}&qa~P'WO|)iO#f&qa%^&qa%a&qa}&qa~Ov)mO#i)lOP#giX#gih#gij#giq#giu#gix#gi!R#gi!S#gi!V#gi!W#gi!Z#gi!_#gi!j#gi!u#gi!v#gi!w#gi#O#gi#Q#gi#S#gi#U#gi#W#gi#[#gi#^#gi#a#gi#b#gi#d#gi#k#gi#n#gi#r#gi#t#gi#y#gi#|#gi$O#gi%Z#gi%w#gi%x#gi%|#gi%}#gi&c#gi&d#gi&g#gi&j#gi&n#gi&o#gi&p#gi%]#gi%a#gi~Ov)nOP#jiX#jih#jij#jiq#jiu#jix#ji!R#ji!S#ji!V#ji!W#ji!Z#ji!_#ji!j#ji!u#ji!v#ji!w#ji#O#ji#Q#ji#S#ji#U#ji#W#ji#[#ji#^#ji#a#ji#b#ji#d#ji#k#ji#n#ji#r#ji#t#ji#y#ji#|#ji$O#ji%Z#ji%w#ji%x#ji%|#ji%}#ji&c#ji&d#ji&g#ji&j#ji&n#ji&o#ji&p#ji%]#ji%a#ji~OX)pOp&wa~P'WO|)qOp&wa~O|)qOp&wa~P$dOp)uO~O%[)xO~Ov){O#o'dO#p)zOP#miX#mih#mij#miq#miu#mix#mi!R#mi!S#mi!V#mi!W#mi!Z#mi!_#mi!j#mi!u#mi!v#mi!w#mi#O#mi#Q#mi#S#mi#U#mi#W#mi#[#mi#^#mi#a#mi#b#mi#d#mi#k#mi#n#mi#r#mi#t#mi#y#mi#|#mi$O#mi%Z#mi%w#mi%x#mi%|#mi%}#mi&c#mi&d#mi&g#mi&j#mi&n#mi&o#mi&p#mi%]#mi%a#mi~Oq0VOx0eO}$uO~P'WOq0VOx0eO}&xa~P'WO|*RO}&xa~OX*VOc*WOi*ZO%y*XO%}WO~O}$uO&{*]O~O%^*aO~O%^*cO~OX%YOc%YOq0VOx0eOi&^a~P'WO|*fOi&^a~Oq0VOx0eO}*iO!Y&aa~P'WO|*jO!Y&aa~Oq0VOx0eO|*jO}*mO!Y&aa~P'WOq0VOx0eO|*jO!Y&aa~P'WO|*jO}*mO!Y&aa~Oo0WOp0WOq0aOr0bOilimliuli|li!Vli!Wli&Tli!Yli}li!^li#fli%^li%ali!Sli#_livli!nli&Sli~On0YO~P!IeOnli~P!IeOX(WOi*rOq0VOx0eO~P'WOp*tO~Oi*rO|*vO~Oi*wO~OX(WOq0VOx0eO!Y&[i~P'WO|*xO!Y&[i~O!Y*yO~OX(gOq0VOx0eO!^&Vi#f&Vi%^&Vi%a&Vii&Vi}&Vi!n&Vi&S&Vi~P'WO|*|O!V%oO!W%nO!^&]i~O|+PO!^&Vi#f&Vi%^&Vi%a&Vii&Vi}&Vi!n&Vi&S&Vi~O!^+QO~Oc+SOq0VOx0eO!^&]i~P'WO|*|O!^&]i~O!^+UO~OX+WOq0VOx0eO}&ka!^&ka!n&ka~P'WO|+XO}&ka!^&ka!n&ka~O!_+[O&m+]O!^!oX~O!^+_O~O}(tO!^+`O~O}(tO!^+aO~O}(tO!^+bO~O}(tO!^+cO~OX&bOquOxvO}%pq!{%pq#f%pq%^%pq%a%pq&S%pq~P'WO|$ui}$ui!{$ui#f$ui%^$ui%a$ui&S$ui~P$dOX&bOquOxvO~P'WOX&bOq0VOx0eO#f%pa%^%pa%a%pa&S%pa~P'WO|+dO#f%pa%^%pa%a%pa&S%pa~O|$ha#f$ha%^$ha%a$hap$ha~P$dO#f&Xi%^&Xi%a&Xip&Xi~P'WO|+gO#f#Zq%^#Zq%a#Zq~O|+hO#_+jO#f&tX%^&tX%a&tXi&tX~OX+lOj)cO%}WO~O%}WO#f&ui%^&ui%a&ui~Oq0VOx0eO#f&qi%^&qi%a&qi}&qi~P'WOv+pO#i)lOP#gqX#gqh#gqj#gqq#gqu#gqx#gq!R#gq!S#gq!V#gq!W#gq!Z#gq!_#gq!j#gq!u#gq!v#gq!w#gq#O#gq#Q#gq#S#gq#U#gq#W#gq#[#gq#^#gq#a#gq#b#gq#d#gq#k#gq#n#gq#r#gq#t#gq#y#gq#|#gq$O#gq%Z#gq%w#gq%x#gq%|#gq%}#gq&c#gq&d#gq&g#gq&j#gq&n#gq&o#gq&p#gq%]#gq%a#gq~Op%Oa|%Oa~P$dOX)pOp&wi~P'WO|+wOp&wi~O|,QO}$uO#_,QO~O#p,ROP#mqX#mqh#mqj#mqq#mqu#mqx#mq!R#mq!S#mq!V#mq!W#mq!Z#mq!_#mq!j#mq!u#mq!v#mq!w#mq#O#mq#Q#mq#S#mq#U#mq#W#mq#[#mq#^#mq#a#mq#b#mq#d#mq#k#mq#n#mq#r#mq#t#mq#y#mq#|#mq$O#mq%Z#mq%w#mq%x#mq%|#mq%}#mq&c#mq&d#mq&g#mq&j#mq&n#mq&o#mq&p#mq%]#mq%a#mq~O#_,SO|%Qa}%Qa~Oq0VOx0eO}&xi~P'WO|,UO}&xi~O}$ZO&S,WOi&zX|&zX~O%}WOi&zX|&zX~O|,[Oi&yX~Oi,^O~O%[,`O~OX%YOc%YOq0VOx0eOi&^i~P'WO},bO|$ka!Y$ka~Oq0VOx0eO},cO|$ka!Y$ka~P'WOq0VOx0eO}*iO!Y&ai~P'WO|,fO!Y&ai~Oq0VOx0eO|,fO!Y&ai~P'WO|,fO},iO!Y&ai~Oi$gi|$gi!Y$gi~P$dOX(WOq0VOx0eO~P'WOp,kO~OX(WOi,lOq0VOx0eO~P'WOX(WOq0VOx0eO!Y&[q~P'WO|$fi!^$fi#f$fi%^$fi%a$fii$fi}$fi!n$fi&S$fi~P$dOX(gOq0VOx0eO~P'WOc+SOq0VOx0eO!^&]q~P'WO|,mO!^&]q~O!^,nO~OX(gOq0VOx0eO!^&Vq#f&Vq%^&Vq%a&Vqi&Vq}&Vq!n&Vq&S&Vq~P'WO},oO~OX+WOq0VOx0eO}&ki!^&ki!n&ki~P'WO|,tO}&ki!^&ki!n&ki~O!_+[O&m+]O!^!oa~OX&bOq0VOx0eO#f%pi%^%pi%a%pi&S%pi~P'WO|,wO#f%pi%^%pi%a%pi&S%pi~O%}WO#f&ta%^&ta%a&tai&ta~O|,zO#f&ta%^&ta%a&tai&ta~Oi,}O~Op%Oi|%Oi~P$dOX)pO~P'WOX)pOp&wq~P'WOv-QOP#lyX#lyh#lyj#lyq#lyu#lyx#ly!R#ly!S#ly!V#ly!W#ly!Z#ly!_#ly!j#ly!u#ly!v#ly!w#ly#O#ly#Q#ly#S#ly#U#ly#W#ly#[#ly#^#ly#a#ly#b#ly#d#ly#k#ly#n#ly#r#ly#t#ly#y#ly#|#ly$O#ly%Z#ly%w#ly%x#ly%|#ly%}#ly&c#ly&d#ly&g#ly&j#ly&n#ly&o#ly&p#ly%]#ly%a#ly~O%]-TO%a-TO~P`O#p-UOP#myX#myh#myj#myq#myu#myx#my!R#my!S#my!V#my!W#my!Z#my!_#my!j#my!u#my!v#my!w#my#O#my#Q#my#S#my#U#my#W#my#[#my#^#my#a#my#b#my#d#my#k#my#n#my#r#my#t#my#y#my#|#my$O#my%Z#my%w#my%x#my%|#my%}#my&c#my&d#my&g#my&j#my&n#my&o#my&p#my%]#my%a#my~Oq0VOx0eO}&xq~P'WO|-YO}&xq~O&S,WOi&za|&za~OX*VOc*WO%y*XO%}WOi&ya~O|-^Oi&ya~O$R-bO~OX%YOc%YOq0VOx0eO~P'WOq0VOx0eO}-cO|$ki!Y$ki~P'WOq0VOx0eO|$ki!Y$ki~P'WO}-cO|$ki!Y$ki~Oq0VOx0eO}*iO~P'WOq0VOx0eO}*iO!Y&aq~P'WO|-fO!Y&aq~Oq0VOx0eO|-fO!Y&aq~P'WOu-iO!V%oO!W%nOi&Wq!Y&Wq!^&Wq|&Wq~P!-iOc+SOq0VOx0eO!^&]y~P'WO|$ii!^$ii~P$dOc+SOq0VOx0eO~P'WOX+WOq0VOx0eO~P'WOX+WOq0VOx0eO}&kq!^&kq!n&kq~P'WO}(tO!^-mO!n-nO~OX&bOq0VOx0eO#f%pq%^%pq%a%pq&S%pq~P'WO#_-oO|$za#f$za%^$za%a$zai$za~O%}WO#f&ti%^&ti%a&tii&ti~O|-qO#f&ti%^&ti%a&tii&ti~Ov-tOP#l!RX#l!Rh#l!Rj#l!Rq#l!Ru#l!Rx#l!R!R#l!R!S#l!R!V#l!R!W#l!R!Z#l!R!_#l!R!j#l!R!u#l!R!v#l!R!w#l!R#O#l!R#Q#l!R#S#l!R#U#l!R#W#l!R#[#l!R#^#l!R#a#l!R#b#l!R#d#l!R#k#l!R#n#l!R#r#l!R#t#l!R#y#l!R#|#l!R$O#l!R%Z#l!R%w#l!R%x#l!R%|#l!R%}#l!R&c#l!R&d#l!R&g#l!R&j#l!R&n#l!R&o#l!R&p#l!R%]#l!R%a#l!R~Oq0VOx0eO}&xy~P'WOX*VOc*WO%y*XO%}WOi&yi~O$R-bO%]-zO%a-zO~OX.UOj.SO!Z.RO!_.TO!j-}O!v.PO!w.PO%x-|O%}WO&c]O&d^O&g_O~Oq0VOx0eO|$kq!Y$kq~P'WO}.ZO|$kq!Y$kq~Oq0VOx0eO}*iO!Y&ay~P'WO|.[O!Y&ay~Oq0VOx.`O~P'WOu-iO!V%oO!W%nOi&Wy!Y&Wy!^&Wy|&Wy~P!-iO}(tO!^.cO~O%}WO#f&tq%^&tq%a&tqi&tq~O|.eO#f&tq%^&tq%a&tqi&tq~OX*VOc*WO%y*XO%}WO~Oj.iO!h.gO|$SX#_$SX%r$SXi$SX~Ou$SX}$SX!Y$SX!^$SX~P$!}O%w.kO%x.kOu$TX|$TX}$TX#_$TX%r$TX!Y$TXi$TX!^$TX~O!j.mO~O|.qO#_.sO%r.nOu&|X}&|X!Y&|Xi&|X~Oc.vO~P#M_Oj.iOu&}X|&}X}&}X#_&}X%r&}X!Y&}Xi&}X!^&}X~Ou.zO}$uO~Oq0VOx0eO|$ky!Y$ky~P'WOq0VOx0eO}*iO!Y&a!R~P'WO|/OO!Y&a!R~Oi&ZXu&ZX!V&ZX!W&ZX!Y&ZX!^&ZX|&ZX~P!-iOu-iO!V%oO!W%nOi&Ya!Y&Ya!^&Ya|&Ya~O%}WO#f&ty%^&ty%a&tyi&ty~O!h.gOj$Zau$Za|$Za}$Za#_$Za%r$Za!Y$Zai$Za!^$Za~O!j/XO~O%w.kO%x.kOu$Ta|$Ta}$Ta#_$Ta%r$Ta!Y$Tai$Ta!^$Ta~O%r.nOu$Xa|$Xa}$Xa#_$Xa!Y$Xai$Xa!^$Xa~Ou&|a}&|a!Y&|ai&|a~P#MRO|/^Ou&|a}&|a!Y&|ai&|a~O!Y/aO~Oi/aO~O}/cO~O!^/dO~Oq0VOx0eO}*iO!Y&a!Z~P'WO}/gO~O&S/hO~P$!}O|/iO#_.sO%r.nOi'PX~O|/iOi'PX~Oi/kO~O!j/lO~O#_.sOu%Ua|%Ua}%Ua%r%Ua!Y%Uai%Ua!^%Ua~O#_.sO%r.nOu%Ya|%Ya}%Ya!Y%Yai%Ya~Ou&|i}&|i!Y&|ii&|i~P#MRO|/nO#_.sO%r.nO!^'Oa~O}$ca~P$dOi'Pa~P#MRO|/vOi'Pa~Oc/xO!^'Oi~P#M_O|/zO!^'Oi~O|/zO#_.sO%r.nO!^'Oi~O#_.sO%r.nOi$ai|$ai~O&S/}O~P$!}O#_.sO%r.nOi%Xa|%Xa~Oi'Pi~P#MRO}0QO~Oc/xO!^'Oq~P#M_O|0SO!^'Oq~O#_.sO%r.nO|%Wi!^%Wi~Oc/xO~P#M_Oc/xO!^'Oy~P#M_O#_.sO%r.nOi$bi|$bi~O#_.sO%r.nO|%Wq!^%Wq~O|+dO#f%pa%^%pa%a%pa&S%pa~P$dOX&bOq0VOx0eO~P'WOp0[O~Oq0[O~P'WO}0]O~Ov0^O~P!-iO&d&g&o&p&c&j&n%}&c~",
+     goto: "!<w'QPPPPPPPP'RP'Z*s+]+v,b,}-kP.YP'Z.y.y'ZPPP'Z2cPPPPPP2c5VPP5VP7g7p=pPP=s>e>hPP'Z'ZPP?QPP'Z'ZPP'Z'Z'Z'Z'Z?U?{'ZP@OP@UD]GyPG}HZH_HcHg'ZPPPHkHq'RP'R'RP'RP'RP'RP'RP'R'R'RP'RPP'RPP'RPHwPIOIUPIOPIOIOPPPIOPKTPK^KdKjKTPIOKpPIOPKwK}PLRLgMUMoLRLRMuNSLRLRLRLRNhNnNqNvNy! T! Z! g! y!!P!!Z!!a!!}!#T!#Z!#a!#k!#q!#w!#}!$T!$Z!$m!$w!$}!%T!%Z!%e!%k!%q!%w!&R!&X!&c!&i!&r!&x!'X!'a!'k!'rPPPPPPPPPPPPPPPPP!'x!'{!(R!([!(f!(qPPPPPPPPPPPP!-e!.y!2s!6TPP!6]!6o!6x!7n!7e!7w!7}!8Q!8T!8W!8`!9PPPPPPPPPP!9S!9cPPPP!:R!:_!:k!:q!:z!:}!;T!;Z!;a!;dP!;l!;u!<q!<t]jOs#u$u)x+|'}eOTYZ[fistuwy}!O!S!T!U!V!Y!]!g!h!i!j!k!l!m!o!s!t!u!w!x#O#S#W#X#b#f#i#l#r#u$W$X$Z$]$`$p$r$s$u$|%Y%_%f%i%k%n%r%w%y&T&`&b&m&q&z&|&}'U'Y']'d'g'v'w'z'|'}(R(W(Y(^(b(g(h(n(q)O)Q)Y)])i)l)p)q)u)x*R*]*f*i*j*m*s*t*v*x*{*|+P+S+W+X+[+d+f+g+n+v+w+|,T,U,X,a,b,c,e,f,i,k,m,o,q,s,t,w-Y-[-c-f-i.Z.[.z/O/g0V0W0X0Y0[0]0^0_0`0b0f}!gQ#q$O$a$o${%p%u%{%|&r'['q)P)[)o*q*z+u,p/e0Z!P!hQ#q$O$a$o${%Q%p%u%{%|&r'['q)P)[)o*q*z+u,p/e0Z!R!iQ#q$O$a$o${%Q%R%p%u%{%|&r'['q)P)[)o*q*z+u,p/e0Z!T!jQ#q$O$a$o${%Q%R%S%p%u%{%|&r'['q)P)[)o*q*z+u,p/e0Z!V!kQ#q$O$a$o${%Q%R%S%T%p%u%{%|&r'['q)P)[)o*q*z+u,p/e0Z!X!lQ#q$O$a$o${%Q%R%S%T%U%p%u%{%|&r'['q)P)[)o*q*z+u,p/e0Z!]!lQ!r#q$O$a$o${%Q%R%S%T%U%V%p%u%{%|&r'['q)P)[)o*q*z+u,p/e0Z'}TOTYZ[fistuwy}!O!S!T!U!V!Y!]!g!h!i!j!k!l!m!o!s!t!u!w!x#O#S#W#X#b#f#i#l#r#u$W$X$Z$]$`$p$r$s$u$|%Y%_%f%i%k%n%r%w%y&T&`&b&m&q&z&|&}'U'Y']'d'g'v'w'z'|'}(R(W(Y(^(b(g(h(n(q)O)Q)Y)])i)l)p)q)u)x*R*]*f*i*j*m*s*t*v*x*{*|+P+S+W+X+[+d+f+g+n+v+w+|,T,U,X,a,b,c,e,f,i,k,m,o,q,s,t,w-Y-[-c-f-i.Z.[.z/O/g0V0W0X0Y0[0]0^0_0`0b0f&cVOYZ[isuw}!O!S!T!U!Y!m!o!s!t!u!w!x#b#f#i#l#r#u$X$Z$]$`$s$u%Y%_%f%i%k%r%w%y&T&`&m&q&|&}'U']'d'g'v'w'z'|'}(R(Y(b(h(n(q)O)Q)Y)i)l)u)x*R*]*f*i*j*m*s*t*v*x*{*|+P+W+X+[+d+g+n+|,T,U,X,a,b,c,e,f,i,k,m,o,q,s,t,w-Y-[-c-f-i.Z.[/O/g0V0W0X0Y0[0]0^0_0b0f%mXOYZ[isw}!O!S!T!U!Y!m!o#b#f#i#l#r#u$X$Z$]$`$s$u%Y%_%i%k%r%w%y&T&`&m&q&|&}'U']'d'g'v'w'z'|'}(R(Y(b(h(n(q)O)Q)Y)i)l)u)x*R*]*f*i*j*m*s*v*x*{*|+P+W+X+[+d+g+n+|,T,U,X,a,b,c,e,f,i,m,o,q,s,t,w-Y-[-c-f.Z.[/O0]0^0_Q$UvQ/P.`R0c0e'teOTYZ[fistuwy}!O!S!T!U!V!Y!]!g!h!i!j!k!l!o!s!t!u!w!x#O#S#W#X#b#f#i#l#r#u$W$X$Z$]$`$p$r$s$u$|%Y%_%f%i%k%n%r%w%y&T&`&b&m&q&z&|&}'U'Y']'d'g'v'z'|'}(R(W(Y(^(b(g(h(n(q)O)Q)Y)])i)l)p)q)u)x*R*]*i*j*m*s*t*v*x*{*|+P+S+W+X+[+d+f+g+n+v+w+|,T,U,X,b,c,e,f,i,k,m,o,q,s,t,w-Y-[-c-f-i.Z.[.z/O/g0V0W0X0Y0[0]0^0_0`0b0fW#xm!P!Q$gW$Qv&o.`0eQ$i!RQ$y!ZQ$z![W%X!m'w*f,aS&n$R$SQ'`$tQ)R&hQ)a'OU)b'Q)c)dU)e'S)f+mQ*T'iW*U'k,[-^-xS,Z*V*WY,y+h,z-p-q.eQ,|+jQ-V,QQ-X,Sl-{-b.R.S.U.o.q.v/^/c/h/m/x/}0QQ.d-oQ.w.TQ/T.iQ/`.sU/s/i/v0OX/y/n/z0R0SR&m$Q!_!{YZ!T!U!o%_%k%r'z'|'}(Y(b)l*i*j*m*s*v*x,b,c,e,f,i-c-f.Z.[/OR%i!zQ#PYQ&U#bQ&X#fQ&Z#iQ&]#lQ&v$]Q&y$`R,u+[T._-i/g![!nQ!r#q$O$a$o${%Q%R%S%T%U%V%p%u%{%|&r'['q)P)[)o*q*z+u,p/e0ZQ&k#yR'n$zR'v%XQ%b!qR/R.g'|dOTYZ[fistuwy}!O!S!T!U!V!Y!]!g!h!i!j!k!l!m!o!s!t!u!w!x#O#S#W#X#b#f#i#l#r#u$W$X$Z$]$`$p$r$s$u$|%Y%_%f%i%k%n%r%w%y&T&`&b&m&q&z&|&}'U'Y']'d'g'v'w'z'|'}(R(W(Y(^(b(g(h(n(q)O)Q)Y)])i)l)p)q)u)x*R*]*f*i*j*m*s*t*v*x*{*|+P+S+W+X+[+d+f+g+n+v+w+|,T,U,X,a,b,c,e,f,i,k,m,o,q,s,t,w-Y-[-c-f-i.Z.[.z/O/g0V0W0X0Y0[0]0^0_0`0b0fS#od#p!P.P-b.R.S.T.U.i.o.q.v/^/c/h/i/m/n/v/x/z/}0O0Q0R0S'|dOTYZ[fistuwy}!O!S!T!U!V!Y!]!g!h!i!j!k!l!m!o!s!t!u!w!x#O#S#W#X#b#f#i#l#r#u$W$X$Z$]$`$p$r$s$u$|%Y%_%f%i%k%n%r%w%y&T&`&b&m&q&z&|&}'U'Y']'d'g'v'w'z'|'}(R(W(Y(^(b(g(h(n(q)O)Q)Y)])i)l)p)q)u)x*R*]*f*i*j*m*s*t*v*x*{*|+P+S+W+X+[+d+f+g+n+v+w+|,T,U,X,a,b,c,e,f,i,k,m,o,q,s,t,w-Y-[-c-f-i.Z.[.z/O/g0V0W0X0Y0[0]0^0_0`0b0fT#od#pT#c`#de(u&U&X&Z&](w(y({(},u-nT+](t+^T#ga#hT#jb#kT#mc#nQ$_xR,Y*UX$]x$^$_&xZlOs$u)x+|XpOs)x+|Q$v!XQ'W$mQ'X$nQ'j$xQ'm$zQ)v'_Q)|'dQ*O'eQ*P'fQ*^'lQ*`'nQ+q)lQ+s)mQ+t)nQ+x)tS+z)w*_Q+})zQ,O){Q,P)}Q-O+pQ-P+rQ-R+yQ-S+{Q-W,RQ-s-QQ-u-UQ-v-VQ.f-tQ.{.XR/f.|WpOs)x+|R#{oQ'l$yR)w'`Q,X*UR-[,YQ*_'lR+{)wZnOos)x+|Q'p${R*b'qT-`,`-au.W-b.R.S.U.i.o.q.v/^/c/h/i/m/v/x/}0O0Qt.W-b.R.S.U.i.o.q.v/^/c/h/i/m/v/x/}0O0QQ.w.TX/y/n/z0R0S!P.O-b.R.S.T.U.i.o.q.v/^/c/h/i/m/n/v/x/z/}0O0Q0R0SQ.l-}R/Y.mg.o.Q.p/U/]/b/p/r/t0P0T0Uu.V-b.R.S.U.i.o.q.v/^/c/h/i/m/v/x/}0O0QX.j-{.V/T/sR/V.iV/u/i/v0OR.|.XQsOS#}s+|R+|)xQ&p$TR)W&pS%x#V$VS(i%x(lT(l%{&rQ%l!}Q%s#RW(Z%l%s(`(dQ(`%pR(d%uQ&{$aR)^&{Q(o%|Q*}(jT+T(o*}Q'x%ZR*g'xS'{%^%_Y*k'{*l,g-g.]U*l'|'}(OU,g*m*n*oS-g,h,iR.]-hQ#^^R&P#^Q#a_R&R#aQ#d`R&V#dQ(r&SS+Y(r+ZR+Z(sQ+^(tR,v+^Q#haR&Y#hQ#kbR&[#kQ#ncR&^#nQ#pdR&_#pQ#sgQ&a#qW&d#s&a)Z+eQ)Z&uR+e0ZQ$^xS&w$^&xR&x$_Q'V$kR)j'VQ&i#xR)S&iQ$g!QR'P$gQ+i)bS,{+i-rR-r,|Q'T$iR)g'TQ#vkR&f#vQ)k'WR+o)kQ'Z$oS)r'Z)sR)s'[Q'c$vR)y'cQ'h$wS*S'h,VR,V*TQ,]*YR-_,]WoOs)x+|R#zoQ-a,`R-y-ad.p.Q/U/]/b/p/r/t0P0T0UR/[.pU.h-{/T/sR/S.hQ/o/bS/{/o/|R/|/pS/j/U/VR/w/jQ.r.QR/_.rR!_PXrOs)x+|WqOs)x+|R'a$uYkOs$u)x+|R&e#u[xOs#u$u)x+|R&v$]&bQOYZ[isuw}!O!S!T!U!Y!m!o!s!t!u!w!x#b#f#i#l#r#u$X$Z$]$`$s$u%Y%_%f%i%k%r%w%y&T&`&m&q&|&}'U']'d'g'v'w'z'|'}(R(Y(b(h(n(q)O)Q)Y)i)l)u)x*R*]*f*i*j*m*s*t*v*x*{*|+P+W+X+[+d+g+n+|,T,U,X,a,b,c,e,f,i,k,m,o,q,s,t,w-Y-[-c-f-i.Z.[/O/g0V0W0X0Y0[0]0^0_0b0fQ!rTQ#qfQ$OtU$ay%n(^S$o!V$rQ${!]Q%Q!gQ%R!hQ%S!iQ%T!jQ%U!kQ%V!lQ%p#OQ%u#SQ%{#WQ%|#XQ&r$WQ'[$pQ'q$|Q)P&bU)[&z)]+fW)o'Y)q+v+wQ*q(WQ*z(gQ+u)pQ,p+SQ/e.zR0Z0`Q!}YQ#RZQ$m!TQ$n!UQ%^!oQ(O%_^(V%k%r(Y(b*s*v*x^*h'z*j,e,f-f.[/OQ*n'|Q*o'}Q+r)lQ,d*iQ,h*mQ-d,bQ-e,cQ-h,iQ.Y-cR.}.Z[gOs#u$u)x+|!^!zYZ!T!U!o%_%k%r'z'|'}(Y(b)l*i*j*m*s*v*x,b,c,e,f,i-c-f.Z.[/OQ#V[Q#tiS$Vw}Q$d!OW$k!S$`'])uS$w!Y$sW%W!m'w*f,aY&S#b#f#i#l+[`&c#r&`)O)Q)Y+d,w0_Q&s$XQ&t$ZQ&u$]Q't%YQ(U%iW(f%w(h*{+PQ(j%yQ(s&TQ)U&mS)X&q0]Q)_&|Q)`&}U)h'U)i+nQ)}'dY*Q'g*R,T,U-YQ*d'vS*p(R0^W+R(n*|,m,qW+V(q+X,s,tQ,_*]Q,r+WQ,x+gQ-Z,XQ-l,oR-w-[hUOs#r#u$u&`&q(R)O)Q)x+|%S!yYZ[iw}!O!S!T!U!Y!m!o#b#f#i#l$X$Z$]$`$s%Y%_%i%k%r%w%y&T&m&|&}'U']'d'g'v'w'z'|'}(Y(b(h(n(q)Y)i)l)u*R*]*f*i*j*m*s*v*x*{*|+P+W+X+[+d+g+n,T,U,X,a,b,c,e,f,i,m,o,q,s,t,w-Y-[-c-f.Z.[/O0]0^0_Q$PuW%c!s!w0W0bQ%d!tQ%e!uQ%g!xQ%q0VS(Q%f0[Q(S0XQ(T0YQ,j*tQ-k,kS.^-i/gR0d0fU$Tv.`0eR)V&o[hOs#u$u)x+|a!|Y#b#f#i#l$]$`+[Q#[[Q$YwR$c}Q%m!}Q%t#RQ%z#VQ't%WQ(a%pQ(e%uQ(m%{Q(p%|Q+O(jQ-j,jQ.b-kR/Q.aQ$byQ(]%nR*u(^Q.a-iR/q/gR#UZR#Z[R%]!mQ%Z!mV*e'w*f,a!]!pQ!r#q$O$a$o${%Q%R%S%T%U%V%p%u%{%|&r'['q)P)[)o*q*z+u,p/e0ZR%`!oQ&U#bQ&X#fQ&Z#iQ&]#lR,u+[Q(v&UQ(x&XQ(z&ZQ(|&]Q+`(wQ+a(yQ+b({Q+c(}Q-m,uR.c-nQ$l!SQ&y$`Q)t']R+y)uQ#ymQ$e!PQ$h!QR'R$gQ)a'QR+l)dQ)a'QQ+k)cR+l)dR$j!RXqOs)x+|Q$q!VR'^$rQ$x!YR'_$sR*['kQ*Y'kV-],[-^-xQ.X-bQ.t.RR.u.SU.Q-b.R.SQ.y.UQ/U.iQ/Z.oU/].q/^/mQ/b.vQ/p/cQ/r/hU/t/i/v0OQ0P/xQ0T/}R0U0QR.x.TR/W.i",
+     nodeNames: "⚠ print { { { { Comment Script AssignStatement * BinaryExpression BitOp BitOp BitOp BitOp ArithOp ArithOp @ ArithOp ** UnaryExpression ArithOp BitOp AwaitExpression await ) ( ParenthesizedExpression BinaryExpression or and CompareOp in not is UnaryExpression ConditionalExpression if else LambdaExpression lambda ParamList VariableName AssignOp , : NamedExpression AssignOp YieldExpression yield from TupleExpression ComprehensionExpression async for LambdaExpression ] [ ArrayExpression ArrayComprehensionExpression } { DictionaryExpression DictionaryComprehensionExpression SetExpression SetComprehensionExpression CallExpression ArgList AssignOp MemberExpression . PropertyName Number String FormatString FormatReplacement FormatConversion FormatSpec FormatReplacement FormatReplacement FormatReplacement FormatReplacement ContinuedString Ellipsis None Boolean TypeDef AssignOp UpdateStatement UpdateOp ExpressionStatement DeleteStatement del PassStatement pass BreakStatement break ContinueStatement continue ReturnStatement return YieldStatement PrintStatement RaiseStatement raise ImportStatement import as ScopeStatement global nonlocal AssertStatement assert StatementGroup ; IfStatement Body elif WhileStatement while ForStatement TryStatement try except finally WithStatement with FunctionDefinition def ParamList AssignOp TypeDef ClassDefinition class DecoratedStatement Decorator At MatchStatement match MatchBody MatchClause case CapturePattern LiteralPattern ArithOp ArithOp AsPattern OrPattern LogicOp AttributePattern SequencePattern MappingPattern StarPattern ClassPattern PatternArgList KeywordPattern KeywordPattern Guard",
+     maxTerm: 277,
      context: trackIndent,
      nodeProps: [
-       ["group", -14,4,80,82,83,85,87,89,91,93,94,95,97,100,103,"Statement Statement",-22,6,16,19,23,38,47,48,54,55,58,59,60,61,62,65,68,69,70,74,75,76,77,"Expression",-10,105,107,110,112,113,117,119,124,126,129,"Statement",-9,134,135,138,139,141,142,143,144,145,"Pattern"],
-       ["openedBy", 21,"(",52,"[",56,"{"],
-       ["closedBy", 22,")",53,"]",57,"}"]
+       ["group", -14,8,88,90,91,93,95,97,99,101,102,103,105,108,111,"Statement Statement",-22,10,20,23,27,42,51,52,58,59,62,63,64,65,66,69,72,73,74,82,83,84,85,"Expression",-10,113,115,118,120,121,125,127,132,134,137,"Statement",-9,142,143,146,147,149,150,151,152,153,"Pattern"],
+       ["openedBy", 25,"(",56,"[",60,"{"],
+       ["closedBy", 26,")",57,"]",61,"}"]
      ],
      propSources: [pythonHighlighting],
-     skippedNodes: [0,2],
-     repeatNodeCount: 38,
-     tokenData: "&JdMgR!^OX$}XY!&]Y[$}[]!&]]p$}pq!&]qr!(grs!,^st!IYtu$}uv$5[vw$7nwx$8zxy%'vyz%(|z{%*S{|%,r|}%.O}!O%/U!O!P%1k!P!Q%<q!Q!R%?a!R![%Cc![!]%N_!]!^&!q!^!_&#w!_!`&&g!`!a&'s!a!b$}!b!c&*`!c!d&+n!d!e&-`!e!h&+n!h!i&7[!i!t&+n!t!u&@j!u!w&+n!w!x&5j!x!}&+n!}#O&Bt#O#P!'u#P#Q&Cz#Q#R&EQ#R#S&+n#S#T$}#T#U&+n#U#V&-`#V#Y&+n#Y#Z&7[#Z#f&+n#f#g&@j#g#i&+n#i#j&5j#j#o&+n#o#p&F^#p#q&GS#q#r&H`#r#s&I^#s$g$}$g~&+n<r%`Z&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}<Q&^Z&^7[&TS&Z`&d!bOr'PrsFisw'Pwx(Rx#O'P#O#PAe#P#o'P#o#pEu#p#q'P#q#rAy#r~'P<Q'`Z&^7[&TS&WW&Z`&d!b&f#tOr'Prs&Rsw'Pwx(Rx#O'P#O#PAe#P#o'P#o#pEu#p#q'P#q#rAy#r~'P;p([Z&^7[&WW&f#tOr(}rs)}sw(}wx={x#O(}#O#P2]#P#o(}#o#p:X#p#q(}#q#r2q#r~(};p)[Z&^7[&TS&WW&d!b&f#tOr(}rs)}sw(}wx(Rx#O(}#O#P2]#P#o(}#o#p:X#p#q(}#q#r2q#r~(};p*WZ&^7[&TS&d!bOr(}rs*ysw(}wx(Rx#O(}#O#P2]#P#o(}#o#p:X#p#q(}#q#r2q#r~(};p+SZ&^7[&TS&d!bOr(}rs+usw(}wx(Rx#O(}#O#P2]#P#o(}#o#p:X#p#q(}#q#r2q#r~(}8r,OX&^7[&TS&d!bOw+uwx,kx#O+u#O#P.]#P#o+u#o#p0d#p#q+u#q#r.q#r~+u8r,pX&^7[Ow+uwx-]x#O+u#O#P.]#P#o+u#o#p0d#p#q+u#q#r.q#r~+u8r-bX&^7[Ow+uwx-}x#O+u#O#P.]#P#o+u#o#p0d#p#q+u#q#r.q#r~+u7[.SR&^7[O#o-}#p#q-}#r~-}8r.bT&^7[O#o+u#o#p.q#p#q+u#q#r.q#r~+u!f.xV&TS&d!bOw.qwx/_x#O.q#O#P0^#P#o.q#o#p0d#p~.q!f/bVOw.qwx/wx#O.q#O#P0^#P#o.q#o#p0d#p~.q!f/zUOw.qx#O.q#O#P0^#P#o.q#o#p0d#p~.q!f0aPO~.q!f0iV&TSOw1Owx1dx#O1O#O#P2V#P#o1O#o#p.q#p~1OS1TT&TSOw1Owx1dx#O1O#O#P2V#P~1OS1gTOw1Owx1vx#O1O#O#P2V#P~1OS1ySOw1Ox#O1O#O#P2V#P~1OS2YPO~1O;p2bT&^7[O#o(}#o#p2q#p#q(}#q#r2q#r~(}%d2|X&TS&WW&d!b&f#tOr2qrs3isw2qwx5Px#O2q#O#P:R#P#o2q#o#p:X#p~2q%d3pX&TS&d!bOr2qrs4]sw2qwx5Px#O2q#O#P:R#P#o2q#o#p:X#p~2q%d4dX&TS&d!bOr2qrs.qsw2qwx5Px#O2q#O#P:R#P#o2q#o#p:X#p~2q%d5WX&WW&f#tOr2qrs3isw2qwx5sx#O2q#O#P:R#P#o2q#o#p:X#p~2q%d5zX&WW&f#tOr2qrs3isw2qwx6gx#O2q#O#P:R#P#o2q#o#p:X#p~2q#|6nV&WW&f#tOr6grs7Ts#O6g#O#P8S#P#o6g#o#p8Y#p~6g#|7WVOr6grs7ms#O6g#O#P8S#P#o6g#o#p8Y#p~6g#|7pUOr6gs#O6g#O#P8S#P#o6g#o#p8Y#p~6g#|8VPO~6g#|8_V&WWOr8trs9Ys#O8t#O#P9{#P#o8t#o#p6g#p~8tW8yT&WWOr8trs9Ys#O8t#O#P9{#P~8tW9]TOr8trs9ls#O8t#O#P9{#P~8tW9oSOr8ts#O8t#O#P9{#P~8tW:OPO~8t%d:UPO~2q%d:`X&TS&WWOr:{rs;isw:{wx<ox#O:{#O#P=u#P#o:{#o#p2q#p~:{[;SV&TS&WWOr:{rs;isw:{wx<ox#O:{#O#P=u#P~:{[;nV&TSOr:{rs<Tsw:{wx<ox#O:{#O#P=u#P~:{[<YV&TSOr:{rs1Osw:{wx<ox#O:{#O#P=u#P~:{[<tV&WWOr:{rs;isw:{wx=Zx#O:{#O#P=u#P~:{[=`V&WWOr:{rs;isw:{wx8tx#O:{#O#P=u#P~:{[=xPO~:{;p>UZ&^7[&WW&f#tOr(}rs)}sw(}wx>wx#O(}#O#P2]#P#o(}#o#p:X#p#q(}#q#r2q#r~(}:Y?QX&^7[&WW&f#tOr>wrs?ms#O>w#O#PAP#P#o>w#o#p8Y#p#q>w#q#r6g#r~>w:Y?rX&^7[Or>wrs@_s#O>w#O#PAP#P#o>w#o#p8Y#p#q>w#q#r6g#r~>w:Y@dX&^7[Or>wrs-}s#O>w#O#PAP#P#o>w#o#p8Y#p#q>w#q#r6g#r~>w:YAUT&^7[O#o>w#o#p6g#p#q>w#q#r6g#r~>w<QAjT&^7[O#o'P#o#pAy#p#q'P#q#rAy#r~'P%tBWX&TS&WW&Z`&d!b&f#tOrAyrsBsswAywx5Px#OAy#O#PEo#P#oAy#o#pEu#p~Ay%tB|X&TS&Z`&d!bOrAyrsCiswAywx5Px#OAy#O#PEo#P#oAy#o#pEu#p~Ay%tCrX&TS&Z`&d!bOrAyrsD_swAywx5Px#OAy#O#PEo#P#oAy#o#pEu#p~Ay!vDhV&TS&Z`&d!bOwD_wx/_x#OD_#O#PD}#P#oD_#o#pET#p~D_!vEQPO~D_!vEYV&TSOw1Owx1dx#O1O#O#P2V#P#o1O#o#pD_#p~1O%tErPO~Ay%tE|X&TS&WWOr:{rs;isw:{wx<ox#O:{#O#P=u#P#o:{#o#pAy#p~:{<QFtZ&^7[&TS&Z`&d!bOr'PrsGgsw'Pwx(Rx#O'P#O#PAe#P#o'P#o#pEu#p#q'P#q#rAy#r~'P9SGrX&^7[&TS&Z`&d!bOwGgwx,kx#OGg#O#PH_#P#oGg#o#pET#p#qGg#q#rD_#r~Gg9SHdT&^7[O#oGg#o#pD_#p#qGg#q#rD_#r~Gg<bIOZ&^7[&WW&ap&f#tOrIqrs)}swIqwx! wx#OIq#O#PJs#P#oIq#o#p! T#p#qIq#q#rKX#r~Iq<bJQZ&^7[&TS&WW&ap&d!b&f#tOrIqrs)}swIqwxHsx#OIq#O#PJs#P#oIq#o#p! T#p#qIq#q#rKX#r~Iq<bJxT&^7[O#oIq#o#pKX#p#qIq#q#rKX#r~Iq&UKfX&TS&WW&ap&d!b&f#tOrKXrs3iswKXwxLRx#OKX#O#PN}#P#oKX#o#p! T#p~KX&UL[X&WW&ap&f#tOrKXrs3iswKXwxLwx#OKX#O#PN}#P#oKX#o#p! T#p~KX&UMQX&WW&ap&f#tOrKXrs3iswKXwxMmx#OKX#O#PN}#P#oKX#o#p! T#p~KX$nMvV&WW&ap&f#tOrMmrs7Ts#OMm#O#PN]#P#oMm#o#pNc#p~Mm$nN`PO~Mm$nNhV&WWOr8trs9Ys#O8t#O#P9{#P#o8t#o#pMm#p~8t&U! QPO~KX&U! [X&TS&WWOr:{rs;isw:{wx<ox#O:{#O#P=u#P#o:{#o#pKX#p~:{<b!!SZ&^7[&WW&ap&f#tOrIqrs)}swIqwx!!ux#OIq#O#PJs#P#oIq#o#p! T#p#qIq#q#rKX#r~Iq:z!#QX&^7[&WW&ap&f#tOr!!urs?ms#O!!u#O#P!#m#P#o!!u#o#pNc#p#q!!u#q#rMm#r~!!u:z!#rT&^7[O#o!!u#o#pMm#p#q!!u#q#rMm#r~!!u<r!$WT&^7[O#o$}#o#p!$g#p#q$}#q#r!$g#r~$}&f!$vX&TS&WW&Z`&ap&d!b&f#tOr!$grsBssw!$gwxLRx#O!$g#O#P!%c#P#o!$g#o#p!%i#p~!$g&f!%fPO~!$g&f!%pX&TS&WWOr:{rs;isw:{wx<ox#O:{#O#P=u#P#o:{#o#p!$g#p~:{Mg!&pa&^7[&TS&WW%[1s&Z`&ap&d!b&f#tOX$}XY!&]Y[$}[]!&]]p$}pq!&]qr$}rs&Rsw$}wxHsx#O$}#O#P!'u#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}Mg!'zX&^7[OY$}YZ!&]Z]$}]^!&]^#o$}#o#p!$g#p#q$}#q#r!$g#r~$}<u!(xb&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!_$}!_!`!*Q!`#O$}#O#P!$R#P#T$}#T#U!+W#U#f$}#f#g!+W#g#h!+W#h#o$}#o#p!%i#p#q$}#q#r!$g#r~$}<u!*eZkR&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}<u!+kZ!jR&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}G{!,m_&bp&^7[&TS&R,X&Z`&d!bOY!-lYZ'PZ]!-l]^'P^r!-lrs!G^sw!-lwx!/|x#O!-l#O#P!Cp#P#o!-l#o#p!F[#p#q!-l#q#r!DU#r~!-lGZ!-}_&^7[&TS&WW&R,X&Z`&d!b&f#tOY!-lYZ'PZ]!-l]^'P^r!-lrs!.|sw!-lwx!/|x#O!-l#O#P!Cp#P#o!-l#o#p!F[#p#q!-l#q#r!DU#r~!-lGZ!/ZZ&^7[&TS&R,X&Z`&d!bOr'PrsFisw'Pwx(Rx#O'P#O#PAe#P#o'P#o#pEu#p#q'P#q#rAy#r~'PFy!0X_&^7[&WW&R,X&f#tOY!1WYZ(}Z]!1W]^(}^r!1Wrs!2fsw!1Wwx!@Yx#O!1W#O#P!3d#P#o!1W#o#p!;t#p#q!1W#q#r!3x#r~!1WFy!1g_&^7[&TS&WW&R,X&d!b&f#tOY!1WYZ(}Z]!1W]^(}^r!1Wrs!2fsw!1Wwx!/|x#O!1W#O#P!3d#P#o!1W#o#p!;t#p#q!1W#q#r!3x#r~!1WFy!2qZ&^7[&TS&R,X&d!bOr(}rs*ysw(}wx(Rx#O(}#O#P2]#P#o(}#o#p:X#p#q(}#q#r2q#r~(}Fy!3iT&^7[O#o!1W#o#p!3x#p#q!1W#q#r!3x#r~!1W0m!4V]&TS&WW&R,X&d!b&f#tOY!3xYZ2qZ]!3x]^2q^r!3xrs!5Osw!3xwx!5tx#O!3x#O#P!;n#P#o!3x#o#p!;t#p~!3x0m!5XX&TS&R,X&d!bOr2qrs4]sw2qwx5Px#O2q#O#P:R#P#o2q#o#p:X#p~2q0m!5}]&WW&R,X&f#tOY!3xYZ2qZ]!3x]^2q^r!3xrs!5Osw!3xwx!6vx#O!3x#O#P!;n#P#o!3x#o#p!;t#p~!3x0m!7P]&WW&R,X&f#tOY!3xYZ2qZ]!3x]^2q^r!3xrs!5Osw!3xwx!7xx#O!3x#O#P!;n#P#o!3x#o#p!;t#p~!3x/V!8RZ&WW&R,X&f#tOY!7xYZ6gZ]!7x]^6g^r!7xrs!8ts#O!7x#O#P!9`#P#o!7x#o#p!9f#p~!7x/V!8yV&R,XOr6grs7ms#O6g#O#P8S#P#o6g#o#p8Y#p~6g/V!9cPO~!7x/V!9mZ&WW&R,XOY!:`YZ8tZ]!:`]^8t^r!:`rs!;Ss#O!:`#O#P!;h#P#o!:`#o#p!7x#p~!:`,a!:gX&WW&R,XOY!:`YZ8tZ]!:`]^8t^r!:`rs!;Ss#O!:`#O#P!;h#P~!:`,a!;XT&R,XOr8trs9ls#O8t#O#P9{#P~8t,a!;kPO~!:`0m!;qPO~!3x0m!;}]&TS&WW&R,XOY!<vYZ:{Z]!<v]^:{^r!<vrs!=rsw!<vwx!>`x#O!<v#O#P!@S#P#o!<v#o#p!3x#p~!<v,e!=PZ&TS&WW&R,XOY!<vYZ:{Z]!<v]^:{^r!<vrs!=rsw!<vwx!>`x#O!<v#O#P!@S#P~!<v,e!=yV&TS&R,XOr:{rs<Tsw:{wx<ox#O:{#O#P=u#P~:{,e!>gZ&WW&R,XOY!<vYZ:{Z]!<v]^:{^r!<vrs!=rsw!<vwx!?Yx#O!<v#O#P!@S#P~!<v,e!?aZ&WW&R,XOY!<vYZ:{Z]!<v]^:{^r!<vrs!=rsw!<vwx!:`x#O!<v#O#P!@S#P~!<v,e!@VPO~!<vFy!@e_&^7[&WW&R,X&f#tOY!1WYZ(}Z]!1W]^(}^r!1Wrs!2fsw!1Wwx!Adx#O!1W#O#P!3d#P#o!1W#o#p!;t#p#q!1W#q#r!3x#r~!1WEc!Ao]&^7[&WW&R,X&f#tOY!AdYZ>wZ]!Ad]^>w^r!Adrs!Bhs#O!Ad#O#P!C[#P#o!Ad#o#p!9f#p#q!Ad#q#r!7x#r~!AdEc!BoX&^7[&R,XOr>wrs@_s#O>w#O#PAP#P#o>w#o#p8Y#p#q>w#q#r6g#r~>wEc!CaT&^7[O#o!Ad#o#p!7x#p#q!Ad#q#r!7x#r~!AdGZ!CuT&^7[O#o!-l#o#p!DU#p#q!-l#q#r!DU#r~!-l0}!De]&TS&WW&R,X&Z`&d!b&f#tOY!DUYZAyZ]!DU]^Ay^r!DUrs!E^sw!DUwx!5tx#O!DU#O#P!FU#P#o!DU#o#p!F[#p~!DU0}!EiX&TS&R,X&Z`&d!bOrAyrsCiswAywx5Px#OAy#O#PEo#P#oAy#o#pEu#p~Ay0}!FXPO~!DU0}!Fe]&TS&WW&R,XOY!<vYZ:{Z]!<v]^:{^r!<vrs!=rsw!<vwx!>`x#O!<v#O#P!@S#P#o!<v#o#p!DU#p~!<vGZ!GkZ&^7[&TS&R,X&Z`&d!bOr'Prs!H^sw'Pwx(Rx#O'P#O#PAe#P#o'P#o#pEu#p#q'P#q#rAy#r~'PGZ!HmX&X#|&^7[&TS&V,X&Z`&d!bOwGgwx,kx#OGg#O#PH_#P#oGg#o#pET#p#qGg#q#rD_#r~GgMg!Im_Q1s&^7[&TS&WW&Z`&ap&d!b&f#tOY!IYYZ$}Z]!IY]^$}^r!IYrs!Jlsw!IYwx$$[x#O!IY#O#P$1v#P#o!IY#o#p$4Y#p#q!IY#q#r$2j#r~!IYLu!Jy_Q1s&^7[&TS&Z`&d!bOY!KxYZ'PZ]!Kx]^'P^r!Kxrs$ Usw!Kxwx!MYx#O!Kx#O#P#G^#P#o!Kx#o#p#NS#p#q!Kx#q#r#HQ#r~!KxLu!LZ_Q1s&^7[&TS&WW&Z`&d!b&f#tOY!KxYZ'PZ]!Kx]^'P^r!Kxrs!Jlsw!Kxwx!MYx#O!Kx#O#P#G^#P#o!Kx#o#p#NS#p#q!Kx#q#r#HQ#r~!KxLe!Me_Q1s&^7[&WW&f#tOY!NdYZ(}Z]!Nd]^(}^r!Ndrs# rsw!Ndwx#B[x#O!Nd#O#P#/f#P#o!Nd#o#p#<b#p#q!Nd#q#r#0Y#r~!NdLe!Ns_Q1s&^7[&TS&WW&d!b&f#tOY!NdYZ(}Z]!Nd]^(}^r!Ndrs# rsw!Ndwx!MYx#O!Nd#O#P#/f#P#o!Nd#o#p#<b#p#q!Nd#q#r#0Y#r~!NdLe# }_Q1s&^7[&TS&d!bOY!NdYZ(}Z]!Nd]^(}^r!Ndrs#!|sw!Ndwx!MYx#O!Nd#O#P#/f#P#o!Nd#o#p#<b#p#q!Nd#q#r#0Y#r~!NdLe##X_Q1s&^7[&TS&d!bOY!NdYZ(}Z]!Nd]^(}^r!Ndrs#$Wsw!Ndwx!MYx#O!Nd#O#P#/f#P#o!Nd#o#p#<b#p#q!Nd#q#r#0Y#r~!NdIg#$c]Q1s&^7[&TS&d!bOY#$WYZ+uZ]#$W]^+u^w#$Wwx#%[x#O#$W#O#P#(^#P#o#$W#o#p#,Q#p#q#$W#q#r#)Q#r~#$WIg#%c]Q1s&^7[OY#$WYZ+uZ]#$W]^+u^w#$Wwx#&[x#O#$W#O#P#(^#P#o#$W#o#p#,Q#p#q#$W#q#r#)Q#r~#$WIg#&c]Q1s&^7[OY#$WYZ+uZ]#$W]^+u^w#$Wwx#'[x#O#$W#O#P#(^#P#o#$W#o#p#,Q#p#q#$W#q#r#)Q#r~#$WHP#'cXQ1s&^7[OY#'[YZ-}Z]#'[]^-}^#o#'[#o#p#(O#p#q#'[#q#r#(O#r~#'[1s#(TRQ1sOY#(OZ]#(O^~#(OIg#(eXQ1s&^7[OY#$WYZ+uZ]#$W]^+u^#o#$W#o#p#)Q#p#q#$W#q#r#)Q#r~#$W3Z#)ZZQ1s&TS&d!bOY#)QYZ.qZ]#)Q]^.q^w#)Qwx#)|x#O#)Q#O#P#+l#P#o#)Q#o#p#,Q#p~#)Q3Z#*RZQ1sOY#)QYZ.qZ]#)Q]^.q^w#)Qwx#*tx#O#)Q#O#P#+l#P#o#)Q#o#p#,Q#p~#)Q3Z#*yZQ1sOY#)QYZ.qZ]#)Q]^.q^w#)Qwx#(Ox#O#)Q#O#P#+l#P#o#)Q#o#p#,Q#p~#)Q3Z#+qTQ1sOY#)QYZ.qZ]#)Q]^.q^~#)Q3Z#,XZQ1s&TSOY#,zYZ1OZ]#,z]^1O^w#,zwx#-nx#O#,z#O#P#/Q#P#o#,z#o#p#)Q#p~#,z1w#-RXQ1s&TSOY#,zYZ1OZ]#,z]^1O^w#,zwx#-nx#O#,z#O#P#/Q#P~#,z1w#-sXQ1sOY#,zYZ1OZ]#,z]^1O^w#,zwx#.`x#O#,z#O#P#/Q#P~#,z1w#.eXQ1sOY#,zYZ1OZ]#,z]^1O^w#,zwx#(Ox#O#,z#O#P#/Q#P~#,z1w#/VTQ1sOY#,zYZ1OZ]#,z]^1O^~#,zLe#/mXQ1s&^7[OY!NdYZ(}Z]!Nd]^(}^#o!Nd#o#p#0Y#p#q!Nd#q#r#0Y#r~!Nd6X#0g]Q1s&TS&WW&d!b&f#tOY#0YYZ2qZ]#0Y]^2q^r#0Yrs#1`sw#0Ywx#3dx#O#0Y#O#P#;|#P#o#0Y#o#p#<b#p~#0Y6X#1i]Q1s&TS&d!bOY#0YYZ2qZ]#0Y]^2q^r#0Yrs#2bsw#0Ywx#3dx#O#0Y#O#P#;|#P#o#0Y#o#p#<b#p~#0Y6X#2k]Q1s&TS&d!bOY#0YYZ2qZ]#0Y]^2q^r#0Yrs#)Qsw#0Ywx#3dx#O#0Y#O#P#;|#P#o#0Y#o#p#<b#p~#0Y6X#3m]Q1s&WW&f#tOY#0YYZ2qZ]#0Y]^2q^r#0Yrs#1`sw#0Ywx#4fx#O#0Y#O#P#;|#P#o#0Y#o#p#<b#p~#0Y6X#4o]Q1s&WW&f#tOY#0YYZ2qZ]#0Y]^2q^r#0Yrs#1`sw#0Ywx#5hx#O#0Y#O#P#;|#P#o#0Y#o#p#<b#p~#0Y4q#5qZQ1s&WW&f#tOY#5hYZ6gZ]#5h]^6g^r#5hrs#6ds#O#5h#O#P#8S#P#o#5h#o#p#8h#p~#5h4q#6iZQ1sOY#5hYZ6gZ]#5h]^6g^r#5hrs#7[s#O#5h#O#P#8S#P#o#5h#o#p#8h#p~#5h4q#7aZQ1sOY#5hYZ6gZ]#5h]^6g^r#5hrs#(Os#O#5h#O#P#8S#P#o#5h#o#p#8h#p~#5h4q#8XTQ1sOY#5hYZ6gZ]#5h]^6g^~#5h4q#8oZQ1s&WWOY#9bYZ8tZ]#9b]^8t^r#9brs#:Us#O#9b#O#P#;h#P#o#9b#o#p#5h#p~#9b1{#9iXQ1s&WWOY#9bYZ8tZ]#9b]^8t^r#9brs#:Us#O#9b#O#P#;h#P~#9b1{#:ZXQ1sOY#9bYZ8tZ]#9b]^8t^r#9brs#:vs#O#9b#O#P#;h#P~#9b1{#:{XQ1sOY#9bYZ8tZ]#9b]^8t^r#9brs#(Os#O#9b#O#P#;h#P~#9b1{#;mTQ1sOY#9bYZ8tZ]#9b]^8t^~#9b6X#<RTQ1sOY#0YYZ2qZ]#0Y]^2q^~#0Y6X#<k]Q1s&TS&WWOY#=dYZ:{Z]#=d]^:{^r#=drs#>`sw#=dwx#@Sx#O#=d#O#P#Av#P#o#=d#o#p#0Y#p~#=d2P#=mZQ1s&TS&WWOY#=dYZ:{Z]#=d]^:{^r#=drs#>`sw#=dwx#@Sx#O#=d#O#P#Av#P~#=d2P#>gZQ1s&TSOY#=dYZ:{Z]#=d]^:{^r#=drs#?Ysw#=dwx#@Sx#O#=d#O#P#Av#P~#=d2P#?aZQ1s&TSOY#=dYZ:{Z]#=d]^:{^r#=drs#,zsw#=dwx#@Sx#O#=d#O#P#Av#P~#=d2P#@ZZQ1s&WWOY#=dYZ:{Z]#=d]^:{^r#=drs#>`sw#=dwx#@|x#O#=d#O#P#Av#P~#=d2P#ATZQ1s&WWOY#=dYZ:{Z]#=d]^:{^r#=drs#>`sw#=dwx#9bx#O#=d#O#P#Av#P~#=d2P#A{TQ1sOY#=dYZ:{Z]#=d]^:{^~#=dLe#Bg_Q1s&^7[&WW&f#tOY!NdYZ(}Z]!Nd]^(}^r!Ndrs# rsw!Ndwx#Cfx#O!Nd#O#P#/f#P#o!Nd#o#p#<b#p#q!Nd#q#r#0Y#r~!NdJ}#Cq]Q1s&^7[&WW&f#tOY#CfYZ>wZ]#Cf]^>w^r#Cfrs#Djs#O#Cf#O#P#Fj#P#o#Cf#o#p#8h#p#q#Cf#q#r#5h#r~#CfJ}#Dq]Q1s&^7[OY#CfYZ>wZ]#Cf]^>w^r#Cfrs#Ejs#O#Cf#O#P#Fj#P#o#Cf#o#p#8h#p#q#Cf#q#r#5h#r~#CfJ}#Eq]Q1s&^7[OY#CfYZ>wZ]#Cf]^>w^r#Cfrs#'[s#O#Cf#O#P#Fj#P#o#Cf#o#p#8h#p#q#Cf#q#r#5h#r~#CfJ}#FqXQ1s&^7[OY#CfYZ>wZ]#Cf]^>w^#o#Cf#o#p#5h#p#q#Cf#q#r#5h#r~#CfLu#GeXQ1s&^7[OY!KxYZ'PZ]!Kx]^'P^#o!Kx#o#p#HQ#p#q!Kx#q#r#HQ#r~!Kx6i#Ha]Q1s&TS&WW&Z`&d!b&f#tOY#HQYZAyZ]#HQ]^Ay^r#HQrs#IYsw#HQwx#3dx#O#HQ#O#P#Mn#P#o#HQ#o#p#NS#p~#HQ6i#Ie]Q1s&TS&Z`&d!bOY#HQYZAyZ]#HQ]^Ay^r#HQrs#J^sw#HQwx#3dx#O#HQ#O#P#Mn#P#o#HQ#o#p#NS#p~#HQ6i#Ji]Q1s&TS&Z`&d!bOY#HQYZAyZ]#HQ]^Ay^r#HQrs#Kbsw#HQwx#3dx#O#HQ#O#P#Mn#P#o#HQ#o#p#NS#p~#HQ3k#KmZQ1s&TS&Z`&d!bOY#KbYZD_Z]#Kb]^D_^w#Kbwx#)|x#O#Kb#O#P#L`#P#o#Kb#o#p#Lt#p~#Kb3k#LeTQ1sOY#KbYZD_Z]#Kb]^D_^~#Kb3k#L{ZQ1s&TSOY#,zYZ1OZ]#,z]^1O^w#,zwx#-nx#O#,z#O#P#/Q#P#o#,z#o#p#Kb#p~#,z6i#MsTQ1sOY#HQYZAyZ]#HQ]^Ay^~#HQ6i#N]]Q1s&TS&WWOY#=dYZ:{Z]#=d]^:{^r#=drs#>`sw#=dwx#@Sx#O#=d#O#P#Av#P#o#=d#o#p#HQ#p~#=dLu$ c_Q1s&^7[&TS&Z`&d!bOY!KxYZ'PZ]!Kx]^'P^r!Kxrs$!bsw!Kxwx!MYx#O!Kx#O#P#G^#P#o!Kx#o#p#NS#p#q!Kx#q#r#HQ#r~!KxIw$!o]Q1s&^7[&TS&Z`&d!bOY$!bYZGgZ]$!b]^Gg^w$!bwx#%[x#O$!b#O#P$#h#P#o$!b#o#p#Lt#p#q$!b#q#r#Kb#r~$!bIw$#oXQ1s&^7[OY$!bYZGgZ]$!b]^Gg^#o$!b#o#p#Kb#p#q$!b#q#r#Kb#r~$!bMV$$i_Q1s&^7[&WW&ap&f#tOY$%hYZIqZ]$%h]^Iq^r$%hrs# rsw$%hwx$.px#O$%h#O#P$&x#P#o$%h#o#p$-n#p#q$%h#q#r$'l#r~$%hMV$%y_Q1s&^7[&TS&WW&ap&d!b&f#tOY$%hYZIqZ]$%h]^Iq^r$%hrs# rsw$%hwx$$[x#O$%h#O#P$&x#P#o$%h#o#p$-n#p#q$%h#q#r$'l#r~$%hMV$'PXQ1s&^7[OY$%hYZIqZ]$%h]^Iq^#o$%h#o#p$'l#p#q$%h#q#r$'l#r~$%h6y$'{]Q1s&TS&WW&ap&d!b&f#tOY$'lYZKXZ]$'l]^KX^r$'lrs#1`sw$'lwx$(tx#O$'l#O#P$-Y#P#o$'l#o#p$-n#p~$'l6y$)P]Q1s&WW&ap&f#tOY$'lYZKXZ]$'l]^KX^r$'lrs#1`sw$'lwx$)xx#O$'l#O#P$-Y#P#o$'l#o#p$-n#p~$'l6y$*T]Q1s&WW&ap&f#tOY$'lYZKXZ]$'l]^KX^r$'lrs#1`sw$'lwx$*|x#O$'l#O#P$-Y#P#o$'l#o#p$-n#p~$'l5c$+XZQ1s&WW&ap&f#tOY$*|YZMmZ]$*|]^Mm^r$*|rs#6ds#O$*|#O#P$+z#P#o$*|#o#p$,`#p~$*|5c$,PTQ1sOY$*|YZMmZ]$*|]^Mm^~$*|5c$,gZQ1s&WWOY#9bYZ8tZ]#9b]^8t^r#9brs#:Us#O#9b#O#P#;h#P#o#9b#o#p$*|#p~#9b6y$-_TQ1sOY$'lYZKXZ]$'l]^KX^~$'l6y$-w]Q1s&TS&WWOY#=dYZ:{Z]#=d]^:{^r#=drs#>`sw#=dwx#@Sx#O#=d#O#P#Av#P#o#=d#o#p$'l#p~#=dMV$.}_Q1s&^7[&WW&ap&f#tOY$%hYZIqZ]$%h]^Iq^r$%hrs# rsw$%hwx$/|x#O$%h#O#P$&x#P#o$%h#o#p$-n#p#q$%h#q#r$'l#r~$%hKo$0Z]Q1s&^7[&WW&ap&f#tOY$/|YZ!!uZ]$/|]^!!u^r$/|rs#Djs#O$/|#O#P$1S#P#o$/|#o#p$,`#p#q$/|#q#r$*|#r~$/|Ko$1ZXQ1s&^7[OY$/|YZ!!uZ]$/|]^!!u^#o$/|#o#p$*|#p#q$/|#q#r$*|#r~$/|Mg$1}XQ1s&^7[OY!IYYZ$}Z]!IY]^$}^#o!IY#o#p$2j#p#q!IY#q#r$2j#r~!IY7Z$2{]Q1s&TS&WW&Z`&ap&d!b&f#tOY$2jYZ!$gZ]$2j]^!$g^r$2jrs#IYsw$2jwx$(tx#O$2j#O#P$3t#P#o$2j#o#p$4Y#p~$2j7Z$3yTQ1sOY$2jYZ!$gZ]$2j]^!$g^~$2j7Z$4c]Q1s&TS&WWOY#=dYZ:{Z]#=d]^:{^r#=drs#>`sw#=dwx#@Sx#O#=d#O#P#Av#P#o#=d#o#p$2j#p~#=dGz$5o]%jQ&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!_$}!_!`$6h!`#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}Gz$6{Z!s,W&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}Gz$8R]%dQ&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!_$}!_!`$6h!`#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}G{$9Z_&_`&^7[&WW&R,X&ap&f#tOY$:YYZIqZ]$:Y]^Iq^r$:Yrs$;jsw$:Ywx%%zx#O$:Y#O#P%!^#P#o$:Y#o#p%$x#p#q$:Y#q#r%!r#r~$:YGk$:k_&^7[&TS&WW&R,X&ap&d!b&f#tOY$:YYZIqZ]$:Y]^Iq^r$:Yrs$;jsw$:Ywx% ^x#O$:Y#O#P%!^#P#o$:Y#o#p%$x#p#q$:Y#q#r%!r#r~$:YFy$;u_&^7[&TS&R,X&d!bOY$<tYZ(}Z]$<t]^(}^r$<trs$Kvsw$<twx$>Sx#O$<t#O#P$?Q#P#o$<t#o#p$Gb#p#q$<t#q#r$?f#r~$<tFy$=T_&^7[&TS&WW&R,X&d!b&f#tOY$<tYZ(}Z]$<t]^(}^r$<trs$;jsw$<twx$>Sx#O$<t#O#P$?Q#P#o$<t#o#p$Gb#p#q$<t#q#r$?f#r~$<tFy$>_Z&^7[&WW&R,X&f#tOr(}rs)}sw(}wx={x#O(}#O#P2]#P#o(}#o#p:X#p#q(}#q#r2q#r~(}Fy$?VT&^7[O#o$<t#o#p$?f#p#q$<t#q#r$?f#r~$<t0m$?s]&TS&WW&R,X&d!b&f#tOY$?fYZ2qZ]$?f]^2q^r$?frs$@lsw$?fwx$Ffx#O$?f#O#P$G[#P#o$?f#o#p$Gb#p~$?f0m$@u]&TS&R,X&d!bOY$?fYZ2qZ]$?f]^2q^r$?frs$Answ$?fwx$Ffx#O$?f#O#P$G[#P#o$?f#o#p$Gb#p~$?f0m$Aw]&TS&R,X&d!bOY$?fYZ2qZ]$?f]^2q^r$?frs$Bpsw$?fwx$Ffx#O$?f#O#P$G[#P#o$?f#o#p$Gb#p~$?f-o$ByZ&TS&R,X&d!bOY$BpYZ.qZ]$Bp]^.q^w$Bpwx$Clx#O$Bp#O#P$DW#P#o$Bp#o#p$D^#p~$Bp-o$CqV&R,XOw.qwx/wx#O.q#O#P0^#P#o.q#o#p0d#p~.q-o$DZPO~$Bp-o$DeZ&TS&R,XOY$EWYZ1OZ]$EW]^1O^w$EWwx$Ezx#O$EW#O#P$F`#P#o$EW#o#p$Bp#p~$EW,]$E_X&TS&R,XOY$EWYZ1OZ]$EW]^1O^w$EWwx$Ezx#O$EW#O#P$F`#P~$EW,]$FPT&R,XOw1Owx1vx#O1O#O#P2V#P~1O,]$FcPO~$EW0m$FoX&WW&R,X&f#tOr2qrs3isw2qwx5sx#O2q#O#P:R#P#o2q#o#p:X#p~2q0m$G_PO~$?f0m$Gk]&TS&WW&R,XOY$HdYZ:{Z]$Hd]^:{^r$Hdrs$I`sw$Hdwx$KSx#O$Hd#O#P$Kp#P#o$Hd#o#p$?f#p~$Hd,e$HmZ&TS&WW&R,XOY$HdYZ:{Z]$Hd]^:{^r$Hdrs$I`sw$Hdwx$KSx#O$Hd#O#P$Kp#P~$Hd,e$IgZ&TS&R,XOY$HdYZ:{Z]$Hd]^:{^r$Hdrs$JYsw$Hdwx$KSx#O$Hd#O#P$Kp#P~$Hd,e$JaZ&TS&R,XOY$HdYZ:{Z]$Hd]^:{^r$Hdrs$EWsw$Hdwx$KSx#O$Hd#O#P$Kp#P~$Hd,e$KZV&WW&R,XOr:{rs;isw:{wx=Zx#O:{#O#P=u#P~:{,e$KsPO~$HdFy$LR_&^7[&TS&R,X&d!bOY$<tYZ(}Z]$<t]^(}^r$<trs$MQsw$<twx$>Sx#O$<t#O#P$?Q#P#o$<t#o#p$Gb#p#q$<t#q#r$?f#r~$<tC{$M]]&^7[&TS&R,X&d!bOY$MQYZ+uZ]$MQ]^+u^w$MQwx$NUx#O$MQ#O#P$Nx#P#o$MQ#o#p$D^#p#q$MQ#q#r$Bp#r~$MQC{$N]X&^7[&R,XOw+uwx-]x#O+u#O#P.]#P#o+u#o#p0d#p#q+u#q#r.q#r~+uC{$N}T&^7[O#o$MQ#o#p$Bp#p#q$MQ#q#r$Bp#r~$MQGk% kZ&^7[&WW&R,X&ap&f#tOrIqrs)}swIqwx! wx#OIq#O#PJs#P#oIq#o#p! T#p#qIq#q#rKX#r~IqGk%!cT&^7[O#o$:Y#o#p%!r#p#q$:Y#q#r%!r#r~$:Y1_%#R]&TS&WW&R,X&ap&d!b&f#tOY%!rYZKXZ]%!r]^KX^r%!rrs$@lsw%!rwx%#zx#O%!r#O#P%$r#P#o%!r#o#p%$x#p~%!r1_%$VX&WW&R,X&ap&f#tOrKXrs3iswKXwxLwx#OKX#O#PN}#P#oKX#o#p! T#p~KX1_%$uPO~%!r1_%%R]&TS&WW&R,XOY$HdYZ:{Z]$Hd]^:{^r$Hdrs$I`sw$Hdwx$KSx#O$Hd#O#P$Kp#P#o$Hd#o#p%!r#p~$HdGk%&XZ&^7[&WW&R,X&ap&f#tOrIqrs)}swIqwx%&zx#OIq#O#PJs#P#oIq#o#p! T#p#qIq#q#rKX#r~IqGk%'ZX&U!f&^7[&WW&S,X&ap&f#tOr!!urs?ms#O!!u#O#P!#m#P#o!!u#o#pNc#p#q!!u#q#rMm#r~!!uG{%(ZZf,X&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}<u%)aZeR&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}G{%*g_T,X&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsxz$}z{%+f{!_$}!_!`$6h!`#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}G{%+y]_R&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!_$}!_!`$6h!`#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}G{%-V]%g,X&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!_$}!_!`$6h!`#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}<u%.cZxR&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}Mg%/i^%h,X&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!_$}!_!`$6h!`!a%0e!a#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}B^%0xZ&q&j&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}G{%2O_!dQ&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!O$}!O!P%2}!P!Q$}!Q![%5_![#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}G{%3`]&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!O$}!O!P%4X!P#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}G{%4lZ!m,X&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}Gy%5rg!f,V&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!Q$}!Q![%5_![!g$}!g!h%7Z!h!l$}!l!m%;k!m#O$}#O#P!$R#P#R$}#R#S%5_#S#X$}#X#Y%7Z#Y#^$}#^#_%;k#_#o$}#o#p!%i#p#q$}#q#r!$g#r~$}Gy%7la&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx{$}{|%8q|}$}}!O%8q!O!Q$}!Q![%9{![#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}Gy%9S]&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!Q$}!Q![%9{![#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}Gy%:`c!f,V&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!Q$}!Q![%9{![!l$}!l!m%;k!m#O$}#O#P!$R#P#R$}#R#S%9{#S#^$}#^#_%;k#_#o$}#o#p!%i#p#q$}#q#r!$g#r~$}Gy%<OZ!f,V&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}G{%=U_%iR&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!P$}!P!Q%>T!Q!_$}!_!`$6h!`#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}Gz%>h]%kQ&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!_$}!_!`$6h!`#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}Gy%?tu!f,V&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!O$}!O!P%BX!P!Q$}!Q![%Cc![!d$}!d!e%Ee!e!g$}!g!h%7Z!h!l$}!l!m%;k!m!q$}!q!r%H_!r!z$}!z!{%KR!{#O$}#O#P!$R#P#R$}#R#S%Cc#S#U$}#U#V%Ee#V#X$}#X#Y%7Z#Y#^$}#^#_%;k#_#c$}#c#d%H_#d#l$}#l#m%KR#m#o$}#o#p!%i#p#q$}#q#r!$g#r~$}Gy%Bj]&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!Q$}!Q![%5_![#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}Gy%Cvi!f,V&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!O$}!O!P%BX!P!Q$}!Q![%Cc![!g$}!g!h%7Z!h!l$}!l!m%;k!m#O$}#O#P!$R#P#R$}#R#S%Cc#S#X$}#X#Y%7Z#Y#^$}#^#_%;k#_#o$}#o#p!%i#p#q$}#q#r!$g#r~$}Gy%Ev`&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!Q$}!Q!R%Fx!R!S%Fx!S#O$}#O#P!$R#P#R$}#R#S%Fx#S#o$}#o#p!%i#p#q$}#q#r!$g#r~$}Gy%G]`!f,V&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!Q$}!Q!R%Fx!R!S%Fx!S#O$}#O#P!$R#P#R$}#R#S%Fx#S#o$}#o#p!%i#p#q$}#q#r!$g#r~$}Gy%Hp_&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!Q$}!Q!Y%Io!Y#O$}#O#P!$R#P#R$}#R#S%Io#S#o$}#o#p!%i#p#q$}#q#r!$g#r~$}Gy%JS_!f,V&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!Q$}!Q!Y%Io!Y#O$}#O#P!$R#P#R$}#R#S%Io#S#o$}#o#p!%i#p#q$}#q#r!$g#r~$}Gy%Kdc&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!Q$}!Q![%Lo![!c$}!c!i%Lo!i#O$}#O#P!$R#P#R$}#R#S%Lo#S#T$}#T#Z%Lo#Z#o$}#o#p!%i#p#q$}#q#r!$g#r~$}Gy%MSc!f,V&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!Q$}!Q![%Lo![!c$}!c!i%Lo!i#O$}#O#P!$R#P#R$}#R#S%Lo#S#T$}#T#Z%Lo#Z#o$}#o#p!%i#p#q$}#q#r!$g#r~$}Mg%Nr]y1s&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!_$}!_!`& k!`#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}<u&!OZ%sR&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}G{&#UZ#^,X&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}G{&$[_kR&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!^$}!^!_&%Z!_!`!*Q!`!a!*Q!a#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}Gz&%n]%eQ&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!_$}!_!`$6h!`#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}G{&&z]%r,X&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!_$}!_!`!*Q!`#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}G{&(W^kR&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!_$}!_!`!*Q!`!a&)S!a#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}Gz&)g]%fQ&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!_$}!_!`$6h!`#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}G{&*u]]Q#tP&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!_$}!_!`$6h!`#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}Mg&,Tc&^7[&TS&WW&Q&j&Z`&ap&d!b&f#t%m,XOr$}rs&Rsw$}wxHsx!Q$}!Q![&+n![!c$}!c!}&+n!}#O$}#O#P!$R#P#R$}#R#S&+n#S#T$}#T#o&+n#o#p!%i#p#q$}#q#r!$g#r$g$}$g~&+nMg&-ug&^7[&TS&WW&Q&j&Z`&ap&d!b&f#t%m,XOr$}rs&/^sw$}wx&2dx!Q$}!Q![&+n![!c$}!c!t&+n!t!u&5j!u!}&+n!}#O$}#O#P!$R#P#R$}#R#S&+n#S#T$}#T#f&+n#f#g&5j#g#o&+n#o#p!%i#p#q$}#q#r!$g#r$g$}$g~&+nGZ&/k_&^7[&TS&R,X&Z`&d!bOY!-lYZ'PZ]!-l]^'P^r!-lrs&0jsw!-lwx!/|x#O!-l#O#P!Cp#P#o!-l#o#p!F[#p#q!-l#q#r!DU#r~!-lGZ&0wZ&^7[&TS&R,X&Z`&d!bOr'Prs&1jsw'Pwx(Rx#O'P#O#PAe#P#o'P#o#pEu#p#q'P#q#rAy#r~'PD]&1wX&^7[&TS&V,X&Z`&d!bOwGgwx,kx#OGg#O#PH_#P#oGg#o#pET#p#qGg#q#rD_#r~GgGk&2q_&^7[&WW&R,X&ap&f#tOY$:YYZIqZ]$:Y]^Iq^r$:Yrs$;jsw$:Ywx&3px#O$:Y#O#P%!^#P#o$:Y#o#p%$x#p#q$:Y#q#r%!r#r~$:YGk&3}Z&^7[&WW&R,X&ap&f#tOrIqrs)}swIqwx&4px#OIq#O#PJs#P#oIq#o#p! T#p#qIq#q#rKX#r~IqFT&4}X&^7[&WW&S,X&ap&f#tOr!!urs?ms#O!!u#O#P!#m#P#o!!u#o#pNc#p#q!!u#q#rMm#r~!!uMg&6Pc&^7[&TS&WW&Q&j&Z`&ap&d!b&f#t%m,XOr$}rs&/^sw$}wx&2dx!Q$}!Q![&+n![!c$}!c!}&+n!}#O$}#O#P!$R#P#R$}#R#S&+n#S#T$}#T#o&+n#o#p!%i#p#q$}#q#r!$g#r$g$}$g~&+nMg&7qg&^7[&TS&WW&Q&j&Z`&ap&d!b&f#t%m,XOr$}rs&9Ysw$}wx&<Qx!Q$}!Q![&+n![!c$}!c!t&+n!t!u&>x!u!}&+n!}#O$}#O#P!$R#P#R$}#R#S&+n#S#T$}#T#f&+n#f#g&>x#g#o&+n#o#p!%i#p#q$}#q#r!$g#r$g$}$g~&+nGZ&9gZ&^7[&TS&Z`&d!b&`,XOr'Prs&:Ysw'Pwx(Rx#O'P#O#PAe#P#o'P#o#pEu#p#q'P#q#rAy#r~'PGZ&:eZ&^7[&TS&Z`&d!bOr'Prs&;Wsw'Pwx(Rx#O'P#O#PAe#P#o'P#o#pEu#p#q'P#q#rAy#r~'PD]&;eX&^7[&TS&e,X&Z`&d!bOwGgwx,kx#OGg#O#PH_#P#oGg#o#pET#p#qGg#q#rD_#r~GgGk&<_Z&^7[&WW&ap&f#t&Y,XOrIqrs)}swIqwx&=Qx#OIq#O#PJs#P#oIq#o#p! T#p#qIq#q#rKX#r~IqGk&=]Z&^7[&WW&ap&f#tOrIqrs)}swIqwx&>Ox#OIq#O#PJs#P#oIq#o#p! T#p#qIq#q#rKX#r~IqFT&>]X&^7[&WW&c,X&ap&f#tOr!!urs?ms#O!!u#O#P!#m#P#o!!u#o#pNc#p#q!!u#q#rMm#r~!!uMg&?_c&^7[&TS&WW&Q&j&Z`&ap&d!b&f#t%m,XOr$}rs&9Ysw$}wx&<Qx!Q$}!Q![&+n![!c$}!c!}&+n!}#O$}#O#P!$R#P#R$}#R#S&+n#S#T$}#T#o&+n#o#p!%i#p#q$}#q#r!$g#r$g$}$g~&+nMg&APk&^7[&TS&WW&Q&j&Z`&ap&d!b&f#t%m,XOr$}rs&/^sw$}wx&2dx!Q$}!Q![&+n![!c$}!c!h&+n!h!i&>x!i!t&+n!t!u&5j!u!}&+n!}#O$}#O#P!$R#P#R$}#R#S&+n#S#T$}#T#U&+n#U#V&5j#V#Y&+n#Y#Z&>x#Z#o&+n#o#p!%i#p#q$}#q#r!$g#r$g$}$g~&+nG{&CXZ!V,X&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}<u&D_Z!UR&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}Gz&Ee]%cQ&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!_$}!_!`$6h!`#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}Gy&FgX&TS&WW!ZGmOr:{rs;isw:{wx<ox#O:{#O#P=u#P#o:{#o#p!$g#p~:{G{&Gg]%bR&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx!_$}!_!`$6h!`#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}<u&HqX!Y7_&TS&WW&Z`&ap&d!b&f#tOr!$grsBssw!$gwxLRx#O!$g#O#P!%c#P#o!$g#o#p!%i#p~!$gGy&IqZ%l,V&^7[&TS&WW&Z`&ap&d!b&f#tOr$}rs&Rsw$}wxHsx#O$}#O#P!$R#P#o$}#o#p!%i#p#q$}#q#r!$g#r~$}",
-     tokenizers: [legacyPrint, indentation, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, newlines],
-     topRules: {"Script":[0,3]},
-     specialized: [{term: 213, get: value => spec_identifier[value] || -1}],
-     tokenPrec: 7282
+     skippedNodes: [0,6],
+     repeatNodeCount: 37,
+     tokenData: "%-W#sR!`OX%TXY=|Y[%T[]=|]p%Tpq=|qr@_rsDOst!+|tu%Tuv!Nnvw#!|wx#$Wxy#:Uyz#;Yz{#<^{|#>x|}#@S}!O#AW!O!P#Ci!P!Q#N_!Q!R$!y!R![$&w![!]$1e!]!^$3s!^!_$4w!_!`$7c!`!a$8m!a!b%T!b!c$;U!c!d$<b!d!e$>W!e!h$<b!h!i$H[!i!t$<b!t!u%#r!u!w$<b!w!x$Fl!x!}$<b!}#O%%z#O#P?d#P#Q%'O#Q#R%(S#R#S$<b#S#T%T#T#U$<b#U#V$>W#V#Y$<b#Y#Z$H[#Z#f$<b#f#g%#r#g#i$<b#i#j$Fl#j#o$<b#o#p%)^#p#q%*S#q#r%+^#r#s%,S#s$g%T$g;'S$<b;'S;=`$>Q<%lO$<b!n%^]&m!b&eS&hWOr%Trs&Vsw%Twx/Xx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T!n&^]&m!b&eSOr%Trs'Vsw%Twx/Xx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T!n'^]&m!b&eSOr%Trs(Vsw%Twx/Xx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T!f(^Z&m!b&eSOw(Vwx)Px#O(V#O#P+Z#P#o(V#o#p+x#p#q(V#q#r+x#r;'S(V;'S;=`/R<%lO(V!f)UZ&m!bOw(Vwx)wx#O(V#O#P+Z#P#o(V#o#p+x#p#q(V#q#r+x#r;'S(V;'S;=`/R<%lO(V!f)|Z&m!bOw(Vwx*ox#O(V#O#P+Z#P#o(V#o#p+x#p#q(V#q#r+x#r;'S(V;'S;=`/R<%lO(V!b*tT&m!bO#o*o#p#q*o#r;'S*o;'S;=`+T<%lO*o!b+WP;=`<%l*o!f+`W&m!bO#o(V#o#p+x#p#q(V#q#r+x#r;'S(V;'S;=`.d;=`<%l+x<%lO(VS+}V&eSOw+xwx,dx#O+x#O#P-c#P;'S+x;'S;=`.^<%lO+xS,gVOw+xwx,|x#O+x#O#P-c#P;'S+x;'S;=`.^<%lO+xS-PUOw+xx#O+x#O#P-c#P;'S+x;'S;=`.^<%lO+xS-fRO;'S+x;'S;=`-o;=`O+xS-tW&eSOw+xwx,dx#O+x#O#P-c#P;'S+x;'S;=`.^;=`<%l+x<%lO+xS.aP;=`<%l+x!f.iW&eSOw+xwx,dx#O+x#O#P-c#P;'S+x;'S;=`.^;=`<%l(V<%lO+x!f/UP;=`<%l(V!n/`]&m!b&hWOr%Trs&Vsw%Twx0Xx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T!n0`]&m!b&hWOr%Trs&Vsw%Twx1Xx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T!j1`Z&m!b&hWOr1Xrs2Rs#O1X#O#P3q#P#o1X#o#p4`#p#q1X#q#r4`#r;'S1X;'S;=`7i<%lO1X!j2WZ&m!bOr1Xrs2ys#O1X#O#P3q#P#o1X#o#p4`#p#q1X#q#r4`#r;'S1X;'S;=`7i<%lO1X!j3OZ&m!bOr1Xrs*os#O1X#O#P3q#P#o1X#o#p4`#p#q1X#q#r4`#r;'S1X;'S;=`7i<%lO1X!j3vW&m!bO#o1X#o#p4`#p#q1X#q#r4`#r;'S1X;'S;=`6z;=`<%l4`<%lO1XW4eV&hWOr4`rs4zs#O4`#O#P5y#P;'S4`;'S;=`6t<%lO4`W4}VOr4`rs5ds#O4`#O#P5y#P;'S4`;'S;=`6t<%lO4`W5gUOr4`s#O4`#O#P5y#P;'S4`;'S;=`6t<%lO4`W5|RO;'S4`;'S;=`6V;=`O4`W6[W&hWOr4`rs4zs#O4`#O#P5y#P;'S4`;'S;=`6t;=`<%l4`<%lO4`W6wP;=`<%l4`!j7PW&hWOr4`rs4zs#O4`#O#P5y#P;'S4`;'S;=`6t;=`<%l1X<%lO4`!j7lP;=`<%l1X!n7tW&m!bO#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=P;=`<%l8^<%lO%T[8eX&eS&hWOr8^rs9Qsw8^wx:dx#O8^#O#P;v#P;'S8^;'S;=`<y<%lO8^[9VX&eSOr8^rs9rsw8^wx:dx#O8^#O#P;v#P;'S8^;'S;=`<y<%lO8^[9wX&eSOr8^rs+xsw8^wx:dx#O8^#O#P;v#P;'S8^;'S;=`<y<%lO8^[:iX&hWOr8^rs9Qsw8^wx;Ux#O8^#O#P;v#P;'S8^;'S;=`<y<%lO8^[;ZX&hWOr8^rs9Qsw8^wx4`x#O8^#O#P;v#P;'S8^;'S;=`<y<%lO8^[;yRO;'S8^;'S;=`<S;=`O8^[<ZY&eS&hWOr8^rs9Qsw8^wx:dx#O8^#O#P;v#P;'S8^;'S;=`<y;=`<%l8^<%lO8^[<|P;=`<%l8^!n=WY&eS&hWOr8^rs9Qsw8^wx:dx#O8^#O#P;v#P;'S8^;'S;=`<y;=`<%l%T<%lO8^!n=yP;=`<%l%T#s>Xc&m!b&eS&hW%k!TOX%TXY=|Y[%T[]=|]p%Tpq=|qr%Trs&Vsw%Twx/Xx#O%T#O#P?d#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#s?i[&m!bOY%TYZ=|Z]%T]^=|^#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=P;=`<%l8^<%lO%T!q@hd&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!_%T!_!`Av!`#O%T#O#P7o#P#T%T#T#UBz#U#f%T#f#gBz#g#hBz#h#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T!qBR]oR&m!b&eS&hWOr%Trs&Vsw%Twx/Xx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T!qCV]!nR&m!b&eS&hWOr%Trs&Vsw%Twx/Xx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#cDXa&m!b&eS&csOYE^YZ%TZ]E^]^%T^rE^rs!)|swE^wxGpx#OE^#O#P!!u#P#oE^#o#p!#d#p#qE^#q#r!#d#r;'SE^;'S;=`!)v<%lOE^#cEia&m!b&eS&hW&csOYE^YZ%TZ]E^]^%T^rE^rsFnswE^wxGpx#OE^#O#P!!u#P#oE^#o#p!#d#p#qE^#q#r!#d#r;'SE^;'S;=`!)v<%lOE^#cFw]&m!b&eS&csOr%Trs'Vsw%Twx/Xx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#cGya&m!b&hW&csOYE^YZ%TZ]E^]^%T^rE^rsFnswE^wxIOx#OE^#O#P!!u#P#oE^#o#p!#d#p#qE^#q#r!#d#r;'SE^;'S;=`!)v<%lOE^#cIXa&m!b&hW&csOYE^YZ%TZ]E^]^%T^rE^rsFnswE^wxJ^x#OE^#O#P!!u#P#oE^#o#p!#d#p#qE^#q#r!#d#r;'SE^;'S;=`!)v<%lOE^#_Jg_&m!b&hW&csOYJ^YZ1XZ]J^]^1X^rJ^rsKfs#OJ^#O#PL`#P#oJ^#o#pL}#p#qJ^#q#rL}#r;'SJ^;'S;=`!!o<%lOJ^#_KmZ&m!b&csOr1Xrs2ys#O1X#O#P3q#P#o1X#o#p4`#p#q1X#q#r4`#r;'S1X;'S;=`7i<%lO1X#_LeW&m!bO#oJ^#o#pL}#p#qJ^#q#rL}#r;'SJ^;'S;=`! r;=`<%lL}<%lOJ^{MUZ&hW&csOYL}YZ4`Z]L}]^4`^rL}rsMws#OL}#O#PNc#P;'SL};'S;=`! l<%lOL}{M|V&csOr4`rs5ds#O4`#O#P5y#P;'S4`;'S;=`6t<%lO4`{NfRO;'SL};'S;=`No;=`OL}{Nv[&hW&csOYL}YZ4`Z]L}]^4`^rL}rsMws#OL}#O#PNc#P;'SL};'S;=`! l;=`<%lL}<%lOL}{! oP;=`<%lL}#_! y[&hW&csOYL}YZ4`Z]L}]^4`^rL}rsMws#OL}#O#PNc#P;'SL};'S;=`! l;=`<%lJ^<%lOL}#_!!rP;=`<%lJ^#c!!zW&m!bO#oE^#o#p!#d#p#qE^#q#r!#d#r;'SE^;'S;=`!(q;=`<%l!#d<%lOE^!P!#m]&eS&hW&csOY!#dYZ8^Z]!#d]^8^^r!#drs!$fsw!#dwx!%Yx#O!#d#O#P!'Y#P;'S!#d;'S;=`!(k<%lO!#d!P!$mX&eS&csOr8^rs9rsw8^wx:dx#O8^#O#P;v#P;'S8^;'S;=`<y<%lO8^!P!%a]&hW&csOY!#dYZ8^Z]!#d]^8^^r!#drs!$fsw!#dwx!&Yx#O!#d#O#P!'Y#P;'S!#d;'S;=`!(k<%lO!#d!P!&a]&hW&csOY!#dYZ8^Z]!#d]^8^^r!#drs!$fsw!#dwxL}x#O!#d#O#P!'Y#P;'S!#d;'S;=`!(k<%lO!#d!P!']RO;'S!#d;'S;=`!'f;=`O!#d!P!'o^&eS&hW&csOY!#dYZ8^Z]!#d]^8^^r!#drs!$fsw!#dwx!%Yx#O!#d#O#P!'Y#P;'S!#d;'S;=`!(k;=`<%l!#d<%lO!#d!P!(nP;=`<%l!#d#c!(z^&eS&hW&csOY!#dYZ8^Z]!#d]^8^^r!#drs!$fsw!#dwx!%Yx#O!#d#O#P!'Y#P;'S!#d;'S;=`!(k;=`<%lE^<%lO!#d#c!)yP;=`<%lE^#c!*V]&m!b&eS&csOr%Trs!+Osw%Twx/Xx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#c!+ZZ&iW&m!b&eS&gsOw(Vwx)Px#O(V#O#P+Z#P#o(V#o#p+x#p#q(V#q#r+x#r;'S(V;'S;=`/R<%lO(V#s!,XaU!T&m!b&eS&hWOY!+|YZ%TZ]!+|]^%T^r!+|rs!-^sw!+|wx!:hx#O!+|#O#P!FW#P#o!+|#o#p!GT#p#q!+|#q#r!GT#r;'S!+|;'S;=`!Nh<%lO!+|#s!-gaU!T&m!b&eSOY!+|YZ%TZ]!+|]^%T^r!+|rs!.lsw!+|wx!:hx#O!+|#O#P!FW#P#o!+|#o#p!GT#p#q!+|#q#r!GT#r;'S!+|;'S;=`!Nh<%lO!+|#s!.uaU!T&m!b&eSOY!+|YZ%TZ]!+|]^%T^r!+|rs!/zsw!+|wx!:hx#O!+|#O#P!FW#P#o!+|#o#p!GT#p#q!+|#q#r!GT#r;'S!+|;'S;=`!Nh<%lO!+|#k!0T_U!T&m!b&eSOY!/zYZ(VZ]!/z]^(V^w!/zwx!1Sx#O!/z#O#P!4z#P#o!/z#o#p!5w#p#q!/z#q#r!5w#r;'S!/z;'S;=`!:b<%lO!/z#k!1Z_U!T&m!bOY!/zYZ(VZ]!/z]^(V^w!/zwx!2Yx#O!/z#O#P!4z#P#o!/z#o#p!5w#p#q!/z#q#r!5w#r;'S!/z;'S;=`!:b<%lO!/z#k!2a_U!T&m!bOY!/zYZ(VZ]!/z]^(V^w!/zwx!3`x#O!/z#O#P!4z#P#o!/z#o#p!5w#p#q!/z#q#r!5w#r;'S!/z;'S;=`!:b<%lO!/z#g!3gZU!T&m!bOY!3`YZ*oZ]!3`]^*o^#o!3`#o#p!4Y#p#q!3`#q#r!4Y#r;'S!3`;'S;=`!4t<%lO!3`!T!4_TU!TOY!4YZ]!4Y^;'S!4Y;'S;=`!4n<%lO!4Y!T!4qP;=`<%l!4Y#g!4wP;=`<%l!3`#k!5R[U!T&m!bOY!/zYZ(VZ]!/z]^(V^#o!/z#o#p!5w#p#q!/z#q#r!5w#r;'S!/z;'S;=`!9s;=`<%l+x<%lO!/z!X!6OZU!T&eSOY!5wYZ+xZ]!5w]^+x^w!5wwx!6qx#O!5w#O#P!8a#P;'S!5w;'S;=`!9m<%lO!5w!X!6vZU!TOY!5wYZ+xZ]!5w]^+x^w!5wwx!7ix#O!5w#O#P!8a#P;'S!5w;'S;=`!9m<%lO!5w!X!7nZU!TOY!5wYZ+xZ]!5w]^+x^w!5wwx!4Yx#O!5w#O#P!8a#P;'S!5w;'S;=`!9m<%lO!5w!X!8fWU!TOY!5wYZ+xZ]!5w]^+x^;'S!5w;'S;=`!9O;=`<%l+x<%lO!5w!X!9TW&eSOw+xwx,dx#O+x#O#P-c#P;'S+x;'S;=`.^;=`<%l!5w<%lO+x!X!9pP;=`<%l!5w#k!9xW&eSOw+xwx,dx#O+x#O#P-c#P;'S+x;'S;=`.^;=`<%l!/z<%lO+x#k!:eP;=`<%l!/z#s!:qaU!T&m!b&hWOY!+|YZ%TZ]!+|]^%T^r!+|rs!-^sw!+|wx!;vx#O!+|#O#P!FW#P#o!+|#o#p!GT#p#q!+|#q#r!GT#r;'S!+|;'S;=`!Nh<%lO!+|#s!<PaU!T&m!b&hWOY!+|YZ%TZ]!+|]^%T^r!+|rs!-^sw!+|wx!=Ux#O!+|#O#P!FW#P#o!+|#o#p!GT#p#q!+|#q#r!GT#r;'S!+|;'S;=`!Nh<%lO!+|#o!=__U!T&m!b&hWOY!=UYZ1XZ]!=U]^1X^r!=Urs!>^s#O!=U#O#P!@j#P#o!=U#o#p!Ag#p#q!=U#q#r!Ag#r;'S!=U;'S;=`!FQ<%lO!=U#o!>e_U!T&m!bOY!=UYZ1XZ]!=U]^1X^r!=Urs!?ds#O!=U#O#P!@j#P#o!=U#o#p!Ag#p#q!=U#q#r!Ag#r;'S!=U;'S;=`!FQ<%lO!=U#o!?k_U!T&m!bOY!=UYZ1XZ]!=U]^1X^r!=Urs!3`s#O!=U#O#P!@j#P#o!=U#o#p!Ag#p#q!=U#q#r!Ag#r;'S!=U;'S;=`!FQ<%lO!=U#o!@q[U!T&m!bOY!=UYZ1XZ]!=U]^1X^#o!=U#o#p!Ag#p#q!=U#q#r!Ag#r;'S!=U;'S;=`!Ec;=`<%l4`<%lO!=U!]!AnZU!T&hWOY!AgYZ4`Z]!Ag]^4`^r!Agrs!Bas#O!Ag#O#P!DP#P;'S!Ag;'S;=`!E]<%lO!Ag!]!BfZU!TOY!AgYZ4`Z]!Ag]^4`^r!Agrs!CXs#O!Ag#O#P!DP#P;'S!Ag;'S;=`!E]<%lO!Ag!]!C^ZU!TOY!AgYZ4`Z]!Ag]^4`^r!Agrs!4Ys#O!Ag#O#P!DP#P;'S!Ag;'S;=`!E]<%lO!Ag!]!DUWU!TOY!AgYZ4`Z]!Ag]^4`^;'S!Ag;'S;=`!Dn;=`<%l4`<%lO!Ag!]!DsW&hWOr4`rs4zs#O4`#O#P5y#P;'S4`;'S;=`6t;=`<%l!Ag<%lO4`!]!E`P;=`<%l!Ag#o!EhW&hWOr4`rs4zs#O4`#O#P5y#P;'S4`;'S;=`6t;=`<%l!=U<%lO4`#o!FTP;=`<%l!=U#s!F_[U!T&m!bOY!+|YZ%TZ]!+|]^%T^#o!+|#o#p!GT#p#q!+|#q#r!GT#r;'S!+|;'S;=`!Mq;=`<%l8^<%lO!+|!a!G^]U!T&eS&hWOY!GTYZ8^Z]!GT]^8^^r!GTrs!HVsw!GTwx!JVx#O!GT#O#P!LV#P;'S!GT;'S;=`!Mk<%lO!GT!a!H^]U!T&eSOY!GTYZ8^Z]!GT]^8^^r!GTrs!IVsw!GTwx!JVx#O!GT#O#P!LV#P;'S!GT;'S;=`!Mk<%lO!GT!a!I^]U!T&eSOY!GTYZ8^Z]!GT]^8^^r!GTrs!5wsw!GTwx!JVx#O!GT#O#P!LV#P;'S!GT;'S;=`!Mk<%lO!GT!a!J^]U!T&hWOY!GTYZ8^Z]!GT]^8^^r!GTrs!HVsw!GTwx!KVx#O!GT#O#P!LV#P;'S!GT;'S;=`!Mk<%lO!GT!a!K^]U!T&hWOY!GTYZ8^Z]!GT]^8^^r!GTrs!HVsw!GTwx!Agx#O!GT#O#P!LV#P;'S!GT;'S;=`!Mk<%lO!GT!a!L[WU!TOY!GTYZ8^Z]!GT]^8^^;'S!GT;'S;=`!Lt;=`<%l8^<%lO!GT!a!L{Y&eS&hWOr8^rs9Qsw8^wx:dx#O8^#O#P;v#P;'S8^;'S;=`<y;=`<%l!GT<%lO8^!a!MnP;=`<%l!GT#s!MxY&eS&hWOr8^rs9Qsw8^wx:dx#O8^#O#P;v#P;'S8^;'S;=`<y;=`<%l!+|<%lO8^#s!NkP;=`<%l!+|#b!Ny_%zQ&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!_%T!_!`# x!`#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#b#!T]!{r&m!b&eS&hWOr%Trs&Vsw%Twx/Xx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#b##X_%tQ&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!_%T!_!`# x!`#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#c#$aa&m!b&hW&csOY#%fYZ%TZ]#%f]^%T^r#%frs#&vsw#%fwx#8Ux#O#%f#O#P#0}#P#o#%f#o#p#1l#p#q#%f#q#r#1l#r;'S#%f;'S;=`#8O<%lO#%f#c#%qa&m!b&eS&hW&csOY#%fYZ%TZ]#%f]^%T^r#%frs#&vsw#%fwx#/{x#O#%f#O#P#0}#P#o#%f#o#p#1l#p#q#%f#q#r#1l#r;'S#%f;'S;=`#8O<%lO#%f#c#'Pa&m!b&eS&csOY#%fYZ%TZ]#%f]^%T^r#%frs#(Usw#%fwx#/{x#O#%f#O#P#0}#P#o#%f#o#p#1l#p#q#%f#q#r#1l#r;'S#%f;'S;=`#8O<%lO#%f#c#(_a&m!b&eS&csOY#%fYZ%TZ]#%f]^%T^r#%frs#)dsw#%fwx#/{x#O#%f#O#P#0}#P#o#%f#o#p#1l#p#q#%f#q#r#1l#r;'S#%f;'S;=`#8O<%lO#%f#Z#)m_&m!b&eS&csOY#)dYZ(VZ]#)d]^(V^w#)dwx#*lx#O#)d#O#P#+f#P#o#)d#o#p#,T#p#q#)d#q#r#,T#r;'S#)d;'S;=`#/u<%lO#)d#Z#*sZ&m!b&csOw(Vwx)wx#O(V#O#P+Z#P#o(V#o#p+x#p#q(V#q#r+x#r;'S(V;'S;=`/R<%lO(V#Z#+kW&m!bO#o#)d#o#p#,T#p#q#)d#q#r#,T#r;'S#)d;'S;=`#.x;=`<%l#,T<%lO#)dw#,[Z&eS&csOY#,TYZ+xZ]#,T]^+x^w#,Twx#,}x#O#,T#O#P#-i#P;'S#,T;'S;=`#.r<%lO#,Tw#-SV&csOw+xwx,|x#O+x#O#P-c#P;'S+x;'S;=`.^<%lO+xw#-lRO;'S#,T;'S;=`#-u;=`O#,Tw#-|[&eS&csOY#,TYZ+xZ]#,T]^+x^w#,Twx#,}x#O#,T#O#P#-i#P;'S#,T;'S;=`#.r;=`<%l#,T<%lO#,Tw#.uP;=`<%l#,T#Z#/P[&eS&csOY#,TYZ+xZ]#,T]^+x^w#,Twx#,}x#O#,T#O#P#-i#P;'S#,T;'S;=`#.r;=`<%l#)d<%lO#,T#Z#/xP;=`<%l#)d#c#0U]&m!b&hW&csOr%Trs&Vsw%Twx0Xx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#c#1SW&m!bO#o#%f#o#p#1l#p#q#%f#q#r#1l#r;'S#%f;'S;=`#6y;=`<%l#1l<%lO#%f!P#1u]&eS&hW&csOY#1lYZ8^Z]#1l]^8^^r#1lrs#2nsw#1lwx#4nx#O#1l#O#P#5b#P;'S#1l;'S;=`#6s<%lO#1l!P#2u]&eS&csOY#1lYZ8^Z]#1l]^8^^r#1lrs#3nsw#1lwx#4nx#O#1l#O#P#5b#P;'S#1l;'S;=`#6s<%lO#1l!P#3u]&eS&csOY#1lYZ8^Z]#1l]^8^^r#1lrs#,Tsw#1lwx#4nx#O#1l#O#P#5b#P;'S#1l;'S;=`#6s<%lO#1l!P#4uX&hW&csOr8^rs9Qsw8^wx;Ux#O8^#O#P;v#P;'S8^;'S;=`<y<%lO8^!P#5eRO;'S#1l;'S;=`#5n;=`O#1l!P#5w^&eS&hW&csOY#1lYZ8^Z]#1l]^8^^r#1lrs#2nsw#1lwx#4nx#O#1l#O#P#5b#P;'S#1l;'S;=`#6s;=`<%l#1l<%lO#1l!P#6vP;=`<%l#1l#c#7S^&eS&hW&csOY#1lYZ8^Z]#1l]^8^^r#1lrs#2nsw#1lwx#4nx#O#1l#O#P#5b#P;'S#1l;'S;=`#6s;=`<%l#%f<%lO#1l#c#8RP;=`<%l#%f#c#8_]&m!b&hW&csOr%Trs&Vsw%Twx#9Wx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#c#9cZ&fS&m!b&hW&dsOr1Xrs2Rs#O1X#O#P3q#P#o1X#o#p4`#p#q1X#q#r4`#r;'S1X;'S;=`7i<%lO1X#c#:a]js&m!b&eS&hWOr%Trs&Vsw%Twx/Xx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T!q#;e]iR&m!b&eS&hWOr%Trs&Vsw%Twx/Xx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#c#<iaXs&m!b&eS&hWOr%Trs&Vsw%Twx/Xxz%Tz{#=n{!_%T!_!`# x!`#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#c#=y_cR&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!_%T!_!`# x!`#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#c#?T_%ws&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!_%T!_!`# x!`#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T!q#@_]|R&m!b&eS&hWOr%Trs&Vsw%Twx/Xx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#s#Ac`%xs&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!_%T!_!`# x!`!a#Be!a#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#O#Bp]&{`&m!b&eS&hWOr%Trs&Vsw%Twx/Xx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#c#Cta!hQ&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!O%T!O!P#Dy!P!Q%T!Q![#GV![#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#c#ES_&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!O%T!O!P#FR!P#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#c#F^]!us&m!b&eS&hWOr%Trs&Vsw%Twx/Xx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#a#Gbi!jq&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!Q%T!Q![#GV![!g%T!g!h#IP!h!l%T!l!m#MZ!m#O%T#O#P7o#P#R%T#R#S#GV#S#X%T#X#Y#IP#Y#^%T#^#_#MZ#_#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#a#IYc&m!b&eS&hWOr%Trs&Vsw%Twx/Xx{%T{|#Je|}%T}!O#Je!O!Q%T!Q![#Km![#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#a#Jn_&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!Q%T!Q![#Km![#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#a#Kxe!jq&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!Q%T!Q![#Km![!l%T!l!m#MZ!m#O%T#O#P7o#P#R%T#R#S#Km#S#^%T#^#_#MZ#_#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#a#Mf]!jq&m!b&eS&hWOr%Trs&Vsw%Twx/Xx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#c#Nja%yR&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!P%T!P!Q$ o!Q!_%T!_!`# x!`#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#b$ z_%{Q&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!_%T!_!`# x!`#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#a$#Uw!jq&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!O%T!O!P$%o!P!Q%T!Q![$&w![!d%T!d!e$(w!e!g%T!g!h#IP!h!l%T!l!m#MZ!m!q%T!q!r$+m!r!z%T!z!{$.]!{#O%T#O#P7o#P#R%T#R#S$&w#S#U%T#U#V$(w#V#X%T#X#Y#IP#Y#^%T#^#_#MZ#_#c%T#c#d$+m#d#l%T#l#m$.]#m#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#a$%x_&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!Q%T!Q![#GV![#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#a$'Sk!jq&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!O%T!O!P$%o!P!Q%T!Q![$&w![!g%T!g!h#IP!h!l%T!l!m#MZ!m#O%T#O#P7o#P#R%T#R#S$&w#S#X%T#X#Y#IP#Y#^%T#^#_#MZ#_#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#a$)Qb&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!Q%T!Q!R$*Y!R!S$*Y!S#O%T#O#P7o#P#R%T#R#S$*Y#S#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#a$*eb!jq&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!Q%T!Q!R$*Y!R!S$*Y!S#O%T#O#P7o#P#R%T#R#S$*Y#S#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#a$+va&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!Q%T!Q!Y$,{!Y#O%T#O#P7o#P#R%T#R#S$,{#S#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#a$-Wa!jq&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!Q%T!Q!Y$,{!Y#O%T#O#P7o#P#R%T#R#S$,{#S#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#a$.fe&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!Q%T!Q![$/w![!c%T!c!i$/w!i#O%T#O#P7o#P#R%T#R#S$/w#S#T%T#T#Z$/w#Z#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#a$0Se!jq&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!Q%T!Q![$/w![!c%T!c!i$/w!i#O%T#O#P7o#P#R%T#R#S$/w#S#T%T#T#Z$/w#Z#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#s$1p_}!T&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!_%T!_!`$2o!`#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T!q$2z]&TR&m!b&eS&hWOr%Trs&Vsw%Twx/Xx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#c$4O]#fs&m!b&eS&hWOr%Trs&Vsw%Twx/Xx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#c$5SaoR&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!^%T!^!_$6X!_!`Av!`!aAv!a#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#b$6d_%uQ&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!_%T!_!`# x!`#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#c$7n_&Ss&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!_%T!_!`Av!`#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#c$8x`oR&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!_%T!_!`Av!`!a$9z!a#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#b$:V_%vQ&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!_%T!_!`# x!`#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#c$;c_aQ#|P&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!_%T!_!`# x!`#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#s$<oe&m!b&eS&hW&b`%}sOr%Trs&Vsw%Twx/Xx!Q%T!Q![$<b![!c%T!c!}$<b!}#O%T#O#P7o#P#R%T#R#S$<b#S#T%T#T#o$<b#o#p8^#p#q%T#q#r8^#r$g%T$g;'S$<b;'S;=`$>Q<%lO$<b#s$>TP;=`<%l$<b#s$>ei&m!b&eS&hW&b`%}sOr%Trs$@Ssw%Twx$C`x!Q%T!Q![$<b![!c%T!c!t$<b!t!u$Fl!u!}$<b!}#O%T#O#P7o#P#R%T#R#S$<b#S#T%T#T#f$<b#f#g$Fl#g#o$<b#o#p8^#p#q%T#q#r8^#r$g%T$g;'S$<b;'S;=`$>Q<%lO$<b#c$@]a&m!b&eS&csOYE^YZ%TZ]E^]^%T^rE^rs$AbswE^wxGpx#OE^#O#P!!u#P#oE^#o#p!#d#p#qE^#q#r!#d#r;'SE^;'S;=`!)v<%lOE^#c$Ak]&m!b&eS&csOr%Trs$Bdsw%Twx/Xx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#Z$BmZ&m!b&eS&gsOw(Vwx)Px#O(V#O#P+Z#P#o(V#o#p+x#p#q(V#q#r+x#r;'S(V;'S;=`/R<%lO(V#c$Cia&m!b&hW&csOY#%fYZ%TZ]#%f]^%T^r#%frs#&vsw#%fwx$Dnx#O#%f#O#P#0}#P#o#%f#o#p#1l#p#q#%f#q#r#1l#r;'S#%f;'S;=`#8O<%lO#%f#c$Dw]&m!b&hW&csOr%Trs&Vsw%Twx$Epx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#_$EyZ&m!b&hW&dsOr1Xrs2Rs#O1X#O#P3q#P#o1X#o#p4`#p#q1X#q#r4`#r;'S1X;'S;=`7i<%lO1X#s$Fye&m!b&eS&hW&b`%}sOr%Trs$@Ssw%Twx$C`x!Q%T!Q![$<b![!c%T!c!}$<b!}#O%T#O#P7o#P#R%T#R#S$<b#S#T%T#T#o$<b#o#p8^#p#q%T#q#r8^#r$g%T$g;'S$<b;'S;=`$>Q<%lO$<b#s$Hii&m!b&eS&hW&b`%}sOr%Trs$JWsw%Twx$MUx!Q%T!Q![$<b![!c%T!c!t$<b!t!u%!S!u!}$<b!}#O%T#O#P7o#P#R%T#R#S$<b#S#T%T#T#f$<b#f#g%!S#g#o$<b#o#p8^#p#q%T#q#r8^#r$g%T$g;'S$<b;'S;=`$>Q<%lO$<b#c$Ja]&m!b&eS&nsOr%Trs$KYsw%Twx/Xx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#c$Ka]&m!b&eSOr%Trs$LYsw%Twx/Xx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#Z$LcZ&m!b&eS&psOw(Vwx)Px#O(V#O#P+Z#P#o(V#o#p+x#p#q(V#q#r+x#r;'S(V;'S;=`/R<%lO(V#c$M_]&m!b&hW&jsOr%Trs&Vsw%Twx$NWx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#c$N_]&m!b&hWOr%Trs&Vsw%Twx% Wx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#_% aZ&m!b&hW&osOr1Xrs2Rs#O1X#O#P3q#P#o1X#o#p4`#p#q1X#q#r4`#r;'S1X;'S;=`7i<%lO1X#s%!ae&m!b&eS&hW&b`%}sOr%Trs$JWsw%Twx$MUx!Q%T!Q![$<b![!c%T!c!}$<b!}#O%T#O#P7o#P#R%T#R#S$<b#S#T%T#T#o$<b#o#p8^#p#q%T#q#r8^#r$g%T$g;'S$<b;'S;=`$>Q<%lO$<b#s%$Pm&m!b&eS&hW&b`%}sOr%Trs$@Ssw%Twx$C`x!Q%T!Q![$<b![!c%T!c!h$<b!h!i%!S!i!t$<b!t!u$Fl!u!}$<b!}#O%T#O#P7o#P#R%T#R#S$<b#S#T%T#T#U$<b#U#V$Fl#V#Y$<b#Y#Z%!S#Z#o$<b#o#p8^#p#q%T#q#r8^#r$g%T$g;'S$<b;'S;=`$>Q<%lO$<b#c%&V]!Zs&m!b&eS&hWOr%Trs&Vsw%Twx/Xx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T!q%'Z]!YR&m!b&eS&hWOr%Trs&Vsw%Twx/Xx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#b%(__%sQ&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!_%T!_!`# x!`#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T#a%)gX!_#T&eS&hWOr8^rs9Qsw8^wx:dx#O8^#O#P;v#P;'S8^;'S;=`<y<%lO8^#c%*__%rR&m!b&eS&hWOr%Trs&Vsw%Twx/Xx!_%T!_!`# x!`#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T!q%+gX!^!e&eS&hWOr8^rs9Qsw8^wx:dx#O8^#O#P;v#P;'S8^;'S;=`<y<%lO8^#a%,_]%|q&m!b&eS&hWOr%Trs&Vsw%Twx/Xx#O%T#O#P7o#P#o%T#o#p8^#p#q%T#q#r8^#r;'S%T;'S;=`=v<%lO%T",
+     tokenizers: [legacyPrint, indentation, newlines, formatString1, formatString2, formatString1l, formatString2l, 0, 1, 2, 3, 4, 5, 6],
+     topRules: {"Script":[0,7]},
+     specialized: [{term: 229, get: value => spec_identifier[value] || -1}],
+     tokenPrec: 7205
    });
 
    const cache = /*@__PURE__*/new NodeWeakMap();
@@ -24185,11 +25020,11 @@
    const globalCompletion = /*@__PURE__*/ifNotIn(dontComplete, /*@__PURE__*/completeFromList(/*@__PURE__*/globals.concat(snippets)));
 
    function indentBody(context, node) {
-       let base = context.lineIndent(node.from);
+       let base = context.baseIndentFor(node);
        let line = context.lineAt(context.pos, -1), to = line.from + line.text.length;
        // Don't consider blank, deindented lines at the end of the
        // block part of the block
-       if (!/\S/.test(line.text) &&
+       if (/^\s*($|#)/.test(line.text) &&
            context.node.to < to + 100 &&
            !/\S/.test(context.state.sliceDoc(to, context.node.to)) &&
            context.lineIndent(context.pos, -1) <= base)
@@ -24265,7 +25100,7 @@
 
    let editorTheme = EditorView.theme(
        {  '&': { maxHeight: '200px' },
-           '.cm-gutter,.cm-content': { minHeight: '100px' },
+           '.cm-gutter,.cm-content': { minHeight: '200px' },
            '.cm-scroller': { overflow: 'auto' },
        });
 

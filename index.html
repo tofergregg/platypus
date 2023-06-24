@@ -26,8 +26,11 @@
             <div class='child' id='middle-panel'>
                 <canvas id="gridCanvas"></canvas>
                 <br>
+                <button onclick='reset_platypus()'>Reset Platypus</button>
+                <br>
                 Speed: <input type="range" id="speed-slider" min="10" max="1000" value="50" onchange="updateSpeed()">
-                <textarea id='console-output' rows="15" cols="40" spellcheck="false">
+                <p>
+                <textarea id='console-output' rows="13" cols="40" spellcheck="false">
 </textarea>
 
             </div>
@@ -35,14 +38,14 @@
                 <button onclick="rotatePlatypus(true)">turn_right()</button>&nbsp;
                 <button onclick="rotatePlatypus(false)">turn_left()</button>&nbsp;
                 <button onclick="movePlatypus('w')">swim()</button>
-                <button onclick="pick_up()">pick_up()</button>
+                <button onclick="pick_up('crab')">pick_up()</button>
                 <button onclick="put_down('egg')">put_down('egg')</button>
-                <input type="checkbox" id="interactive" checked>Interactive
 
                 <p>
                 <button onclick="run_pyodide()">Run program!</button>
                 &nbsp;
                 <button onclick="interruptExecution()">Stop program</button>
+                <input type="checkbox" id="interactive" checked><span id="add-to-code-text">Add to code window</span>
                 <div id="editor" class="editor-div">
                 </div>
             </div>

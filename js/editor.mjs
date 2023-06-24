@@ -6,7 +6,7 @@ import {indentUnit} from "@codemirror/language"
 
 let editorTheme = EditorView.theme(
     {  '&': { maxHeight: '200px' },
-        '.cm-gutter,.cm-content': { minHeight: '100px' },
+        '.cm-gutter,.cm-content': { minHeight: '200px' },
         '.cm-scroller': { overflow: 'auto' },
     });
 
