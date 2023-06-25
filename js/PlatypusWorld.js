@@ -231,29 +231,31 @@ class PlatypusWorld {
         }
         const clickRow = Math.floor(y / this._cellSize);
         const clickCol = Math.floor(x / this._cellSize);
-        if (plat.row == clickRow && plat.col == clickCol) {
-            // rotate clockwise
-            switch(plat.direction) {
-                case 'E':
-                    plat.direction = 'S';
-                    break;
-                case 'S':
-                    plat.direction = 'W';
-                    break;
-                case 'W':
-                    plat.direction = 'N';
-                    break;
-                case 'N':
-                    plat.direction = 'E';
-                    break;
+        if (this._grids.initial[clickRow][clickCol].base == WATER_COLOR) {
+            if (plat.row == clickRow && plat.col == clickCol) {
+                // rotate clockwise
+                switch(plat.direction) {
+                    case 'E':
+                        plat.direction = 'S';
+                        break;
+                    case 'S':
+                        plat.direction = 'W';
+                        break;
+                    case 'W':
+                        plat.direction = 'N';
+                        break;
+                    case 'N':
+                        plat.direction = 'E';
+                        break;
+                }
+            } else {
+                plat.row = clickRow;
+                plat.col = clickCol;
             }
-        } else {
-            plat.row = clickRow;
-            plat.col = clickCol;
+            // update initial to current for drawing
+            Object.assign(this._platypus.current, this._platypus.initial);
+            this.drawWorld();
         }
-        // update initial to current for drawing
-        Object.assign(this._platypus.current, this._platypus.initial);
-        this.drawWorld();
     }
 
     addRemoveObject(x, y, canvas, obj, adding) {
@@ -287,8 +289,10 @@ class PlatypusWorld {
                     this._grids.solution[clickRow][clickCol].base = WATER_COLOR;
                     break;
                 case 'land':
-                    this._grids.initial[clickRow][clickCol].base = GROUND_COLOR;
-                    this._grids.solution[clickRow][clickCol].base = GROUND_COLOR;
+                    if (!(this._platypus.initial.row == clickRow && this._platypus.initial.col == clickCol)) {
+                        this._grids.initial[clickRow][clickCol].base = GROUND_COLOR;
+                        this._grids.solution[clickRow][clickCol].base = GROUND_COLOR;
+                    }
                     break;
             }
         }
