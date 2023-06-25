@@ -52,6 +52,15 @@ class PlatypusWorld {
             }
         }
         this._numRows = updatedRows;
+        if (this._platypus.initial.row >= this._numRows) {
+            this._platypus.initial.row = this._numRows - 1;
+        }
+        if (this._platypus.current.row >= this._numRows) {
+            this._platypus.current.row = this._numRows - 1;
+        }
+        if (this._platypus.solution.row >= this._numRows) {
+            this._platypus.solution.row = this._numRows - 1;
+        }
         this.drawWorld();
     }
 
@@ -78,9 +87,16 @@ class PlatypusWorld {
             }
         }
         this._numCols = updatedCols;
-        if (this._mainCanvas) {
-            this.drawWorld();
+        if (this._platypus.initial.col >= this._numCols) {
+            this._platypus.initial.col = this._numCols - 1;
         }
+        if (this._platypus.current.col >= this._numCols) {
+            this._platypus.current.col = this._numCols - 1;
+        }
+        if (this._platypus.solution.col >= this._numCols) {
+            this._platypus.solution.col = this._numCols - 1;
+        }
+        this.drawWorld();
     }
 
     get numCols() {
