@@ -5,7 +5,6 @@ var world = {};
 
 const SWIM_COLOR = '#4EFFFF';
 const GROUND_COLOR = '#FFF1DA';
-const WALL_COLOR = 'black';
 const CANVAS_SIZE = 300;
 const INIT_ROWS = 5;
 const INIT_COLS = 5;
@@ -30,7 +29,6 @@ const createWorld = () => {
     world.bases = {
         'l': GROUND_COLOR,
         'w': SWIM_COLOR,
-        'b': WALL_COLOR,
     }
     world.grid = [];
     world.final_grid = []; // for solution

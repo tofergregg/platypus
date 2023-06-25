@@ -1,0 +1,44 @@
+body {
+    font: normal 18px Abel, sans-serif;
+}
+
+button {
+    font: normal 18px Abel, sans-serif;
+    font-size: 12px;
+}
+
+
+.editor-div {
+    width: 600px;
+    border: 1px solid black;
+    vertical-align: top;
+}
+
+.parent {
+  // border: 1px solid black;
+  margin: 1rem;
+  // padding: 2rem 2rem;
+  display: inline-block;
+  // text-align: center;
+  width: 80%;
+}
+.child {
+  display: inline-block;
+  vertical-align: top;
+}
+
+#add-to-code-text {
+    font-size: 16px;
+}
+
+#left-panel {
+    width: 10%;
+}
+
+#middle-panel {
+    width: 30%;
+}
+
+#speed-slider {
+    width:60%;
+}
