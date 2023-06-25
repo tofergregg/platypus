@@ -1,4 +1,4 @@
-const SWIM_COLOR = '#4EFFFF';
+const WATER_COLOR = '#4EFFFF';
 const GROUND_COLOR = '#FFF1DA';
 const MAIN_CANVAS_WIDTH = 300;
 const FINAL_CANVAS_WIDTH = 300;
@@ -18,11 +18,11 @@ class PlatypusWorld {
         for (let row = 0; row < numRows; row++) {
             const newRow = [];
             for (let col = 0; col < numCols; col++) {
-                newRow.push({base: SWIM_COLOR});
+                newRow.push({base: WATER_COLOR});
             }
-            this._grids.initial.push(newRow);
-            this._grids.current.push(newRow);
-            this._grids.solution.push(newRow);
+            this._grids.initial.push(JSON.parse(JSON.stringify(newRow)));
+            this._grids.current.push(JSON.parse(JSON.stringify(newRow)));
+            this._grids.solution.push(JSON.parse(JSON.stringify(newRow)));
         }
         this._platypus = {
             initial: {row: 0, col: 0, direction: 'E'},
@@ -37,11 +37,11 @@ class PlatypusWorld {
             for (let row = 0; row < updatedRows - this._numRows; row++) {
             const newRow = [];
             for (let col = 0; col < this._numCols; col++) {
-                newRow.push({base: SWIM_COLOR});
+                newRow.push({base: WATER_COLOR});
             }
-            this._grids.initial.push(newRow);
-            this._grids.current.push(newRow);
-            this._grids.solution.push(newRow);
+            this._grids.initial.push(JSON.parse(JSON.stringify(newRow)));
+            this._grids.current.push(JSON.parse(JSON.stringify(newRow)));
+            this._grids.solution.push(JSON.parse(JSON.stringify(newRow)));
             }
         } else {
             // remove rows
@@ -65,9 +65,9 @@ class PlatypusWorld {
             // add or remove columns
             if (updatedCols > this._numCols) {
                 for (let col = 0; col < updatedCols - this._numCols; col++) {
-                    this._grids.initial[row].push({base: SWIM_COLOR});
-                    this._grids.current[row].push({base: SWIM_COLOR});
-                    this._grids.solution[row].push({base: SWIM_COLOR});
+                    this._grids.initial[row].push({base: WATER_COLOR});
+                    this._grids.current[row].push({base: WATER_COLOR});
+                    this._grids.solution[row].push({base: WATER_COLOR});
                 }
             } else {
                 for (let col = 0; col < this._numCols - updatedCols; col++) {
@@ -76,7 +76,6 @@ class PlatypusWorld {
                     this._grids.solution[row].pop();
                 }
             }
-
         }
         this._numCols = updatedCols;
         if (this._mainCanvas) {
@@ -122,14 +121,17 @@ class PlatypusWorld {
         // Draw the _grid lines
         context.stroke();
 
-        // Draw the colored squares and objects
+        // Draw the colored squares
+        // You cannot change the land and water
+        // so it will always be from the initial grid
+        let grid = this._grids.initial;
         for (let r = 0; r < this.numRows; r++) {
             for (let c = 0; c < this.numCols; c++) {
             const xpos = c * this._cellSize + 1;
             const ypos = r * this._cellSize + 1;
             context.beginPath();
             context.rect(xpos, ypos, this._cellSize - 2, this._cellSize - 2);
-            context.fillStyle = this._grids.initial[r][c].base;
+            context.fillStyle = grid[r][c].base;
             context.fill();
             }
         }
@@ -146,6 +148,25 @@ class PlatypusWorld {
             // okay, all images are loaded!
             // draw the non-platypus objects
             let grid = this._grids.current;
+            if (canvas == solutionCanvas) {
+                grid = this._grids.solution;
+            }
+            for (let row = 0; row < this._numRows; row++) {
+                for (let col = 0; col < this._numCols; col++) {
+                    const objs = grid[row][col];
+                    for (let obj in objs) {
+                        if (obj == 'base') {
+                            continue;
+                        }
+                        const count = objs[obj];
+                        const x = col * this._cellSize;
+                        const y = row * this._cellSize;
+                        const img = this._worldImages[obj[0]];
+                        context.drawImage(img, x, y, this._cellSize, this._cellSize);
+                        
+                    }
+                }
+            }
 
             // draw the platypus
             let plat = this._platypus.current;
@@ -237,6 +258,28 @@ class PlatypusWorld {
         Object.assign(this._grids.current, this._grids.initial);
         this.drawWorld();
     }
+    
+    addRemoveBase(x, y, canvas, base, adding) {
+        const clickRow = Math.floor(y / this._cellSize);
+        const clickCol = Math.floor(x / this._cellSize);
+        // always update both initial and solution,
+        // becuase the base is always the same
+        if (adding) {
+            switch(base) {
+                case 'water':
+                    this._grids.initial[clickRow][clickCol].base = WATER_COLOR;
+                    this._grids.solution[clickRow][clickCol].base = WATER_COLOR;
+                    break;
+                case 'land':
+                    this._grids.initial[clickRow][clickCol].base = GROUND_COLOR;
+                    this._grids.solution[clickRow][clickCol].base = GROUND_COLOR;
+                    break;
+            }
+        }
+        // update initial to current for drawing
+        Object.assign(this._grids.current, this._grids.initial);
+        this.drawWorld();
+    }
 }
 
 window.PlatypusWorld = PlatypusWorld;
@@ -250,6 +293,11 @@ const onMouseClick = (e) => {
     if (objType == 'crab' || objType == 'egg') {
         window.world.addRemoveObject(e.offsetX, e.offsetY, e.currentTarget, objType, adding);
     }
+
+    if (objType == 'land' || objType == 'water') {
+        window.world.addRemoveBase(e.offsetX, e.offsetY, e.currentTarget, objType, adding);
+    }
+
 }
 
 window.init_main = () => {
