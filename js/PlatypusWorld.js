@@ -25,9 +25,9 @@ class PlatypusWorld {
             this._grids.solution.push(JSON.parse(JSON.stringify(newRow)));
         }
         this._platypus = {
-            initial: {row: 0, col: 0, direction: 'E'},
-            current: {row: 0, col: 0, direction: 'E'},
-            solution: {row: 0, col: 0, direction: 'E'},
+            initial: {row: 0, col: 0, direction: 'E', crab: 100, egg: 100},
+            current: {row: 0, col: 0, direction: 'E', crab: 100, egg: 100},
+            solution: {row: 0, col: 0, direction: 'E', crab: 100, egg: 100},
         };
     }
     set numRows(updatedRows) {

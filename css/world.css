@@ -42,3 +42,7 @@ button {
 #speed-slider {
     width:60%;
 }
+
+.num-items {
+    width: 80px;
+}
