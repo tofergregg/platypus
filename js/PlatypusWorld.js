@@ -4,11 +4,11 @@ const MAIN_CANVAS_WIDTH = 300;
 const FINAL_CANVAS_WIDTH = 300;
 
 class PlatypusWorld {
-    constructor(numRows, numCols, _mainCanvas, _finalCanvas) {
+    constructor(numRows, numCols, _mainCanvas, _solutionCanvas) {
         this._numRows = numRows;
         this._numCols = numCols;
         this._mainCanvas = _mainCanvas;
-        this._finalCanvas = _finalCanvas;
+        this._solutionCanvas = _solutionCanvas;
         this._grids = {
             initial: [],
             current: [],
@@ -90,8 +90,8 @@ class PlatypusWorld {
 
     drawWorld() {
         this.drawWorldOnCanvas(this._mainCanvas);
-        if (this._finalCanvas) {
-            this.drawWorldOnCanvas(this._finalCanvas);
+        if (this._solutionCanvas) {
+            this.drawWorldOnCanvas(this._solutionCanvas);
         }
     }
     drawWorldOnCanvas(canvas) {
@@ -134,23 +134,30 @@ class PlatypusWorld {
             }
         }
 
-        // Draw the platypus
-        const drawPlat = () => {
-            let plat = this._platypus.initial;
-            if (canvas == finalCanvas) {
+        // Draw the objects and the platypus
+        const drawObjs = () => {
+            // wait until all images are loaded
+            for (let obj in this._worldImages) {
+                if (!this._worldImages[obj].loaded) {
+                    setTimeout(drawObjs, 50);
+                    return;
+                }
+            }
+            // okay, all images are loaded!
+            // draw the non-platypus objects
+            let grid = this._grids.current;
+
+            // draw the platypus
+            let plat = this._platypus.current;
+            if (canvas == solutionCanvas) {
                 plat = this._platypus.solution;
             }
             const platImg = this._worldImages['plat' + plat.direction];
-            if (platImg.loaded) { 
-                let x = plat.col * this._cellSize;
-                let y = plat.row * this._cellSize;
-                context.drawImage(platImg, x, y, this._cellSize, this._cellSize);
-            } else {
-                setTimeout(drawPlat, 50);
-            }
-        };
-        drawPlat();
-        
+            let x = plat.col * this._cellSize;
+            let y = plat.row * this._cellSize;
+            context.drawImage(platImg, x, y, this._cellSize, this._cellSize);
+        }
+        drawObjs();
     }
 
     loadWorldImages() {
@@ -182,7 +189,7 @@ class PlatypusWorld {
 
     addPlatypus(x, y, canvas) {
         let plat = this._platypus.initial;
-        if (canvas == finalCanvas) {
+        if (canvas == solutionCanvas) {
             plat = this._platypus.solution;
         }
         const clickRow = Math.floor(y / this._cellSize);
@@ -208,14 +215,27 @@ class PlatypusWorld {
             plat.col = clickCol;
         }
         // update initial to current for drawing
-        Object.assign(this._platypus.current, plat);
+        Object.assign(this._platypus.current, this._platypus.initial);
         this.drawWorld();
     }
 
     addRemoveObject(x, y, canvas, obj, adding) {
         const clickRow = Math.floor(y / this._cellSize);
         const clickCol = Math.floor(x / this._cellSize);
-         
+        let grid = this._grids.initial;
+        if (canvas == this._solutionCanvas) {
+            grid = this._grids.solution;
+        }
+        if (adding) {
+            if (!(obj in grid[clickRow][clickCol])) {
+                grid[clickRow][clickCol][obj] = 1;
+            } else {
+                grid[clickRow][clickCol][obj]++;
+            }
+        }
+        // update initial to current for drawing
+        Object.assign(this._grids.current, this._grids.initial);
+        this.drawWorld();
     }
 }
 
@@ -235,14 +255,14 @@ const onMouseClick = (e) => {
 window.init_main = () => {
 
     const mainCanvas = document.querySelector('#mainCanvas');
-    const finalCanvas = document.querySelector('#finalCanvas');
+    const solutionCanvas = document.querySelector('#solutionCanvas');
 
     mainCanvas.width = mainCanvas.height = MAIN_CANVAS_WIDTH;
-    finalCanvas.width = finalCanvas.height = FINAL_CANVAS_WIDTH;
+    solutionCanvas.width = solutionCanvas.height = FINAL_CANVAS_WIDTH;
 
-    window.world = new PlatypusWorld(2, 2, mainCanvas, finalCanvas);
+    window.world = new PlatypusWorld(2, 2, mainCanvas, solutionCanvas);
     mainCanvas.addEventListener("click", onMouseClick, false);
-    finalCanvas.addEventListener("click", onMouseClick, false);
+    solutionCanvas.addEventListener("click", onMouseClick, false);
 
     world.drawWorld();
 }
