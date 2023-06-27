@@ -2,6 +2,11 @@ body {
     font: normal 18px Abel, sans-serif;
 }
 
+textarea
+{
+    font: normal 18px Abel, sans-serif;
+}
+
 button {
     font: normal 18px Abel, sans-serif;
     font-size: 12px;
@@ -36,7 +41,7 @@ button {
 }
 
 #middle-panel {
-    width: 30%;
+    width: 40%;
 }
 
 #speed-slider {

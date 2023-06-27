@@ -26,7 +26,7 @@
                 <input type="radio" id="water" name="object-name" value="water">Water<br>
                 <input type="radio" id="land" name="object-name" value="land">Land<br>
                 <p>
-                <button onclick='loadWorld("worlds/second.txt", true)'>Export World</button>
+                <button onclick='world.exportWorld()'>Export World to clipboard</button>
                 <p>
                 <p>
             </div>
@@ -35,9 +35,9 @@
                 <p>
                 <canvas id="mainCanvas"></canvas>
                 <p>
-                Platypus initially carries <input type="number" class="num-items" id="num-crabs" min="0" step="1" value="100"> crabs.
+                Platypus initially carries <input type="number" class="num-items" id="num-crabs" min="0" step="1" value="100" onchange="world._platypus.initial.crab=document.querySelector('#num-crabs').value"> crabs.
                 <br>
-                Platypus initially carries <input type="number" class="num-items" id="num-eggs" min="0" step="1" value="100"> eggs.
+                Platypus initially carries <input type="number" class="num-items" id="num-eggs" min="0" step="1" value="100" onchange="world._platypus.initial.egg=document.querySelector('#num-eggs').value"> eggs.
             </div>
             <div class='child' id='final-panel'>
                 Final world:
@@ -46,9 +46,18 @@
             </div>
         </div>
         <br>
-        Starter code:
-        <br>
-        <div id="editor" class="editor-div">
+        <div class='parent'>
+            <div class='child'>
+                Starter code:
+                <br>
+                <div id="editor" class="editor-div">
+                </div>
+            </div>
+            <div class='child'>
+                Instructions:
+                <br>
+                <textarea id='instructions' placeholder="Your instructions for completion..." rows="9" cols="40"></textarea>
+            </div>
         </div>
         <script type='module' src='js/PlatypusWorld.js'></script>  
         <script src="js/editor.bundle.js"></script>  

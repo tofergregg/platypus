@@ -1,7 +1,7 @@
 const WATER_COLOR = '#4EFFFF';
 const GROUND_COLOR = '#FFF1DA';
-const MAIN_CANVAS_WIDTH = 300;
-const FINAL_CANVAS_WIDTH = 300;
+const MAIN_CANVAS_WIDTH = 400;
+const FINAL_CANVAS_WIDTH = 400;
 
 class PlatypusWorld {
     constructor(numRows, numCols, _mainCanvas, _solutionCanvas) {
@@ -27,9 +27,10 @@ class PlatypusWorld {
         this._platypus = {
             initial: {row: 0, col: 0, direction: 'E', crab: 100, egg: 100},
             current: {row: 0, col: 0, direction: 'E', crab: 100, egg: 100},
-            solution: {row: 0, col: 0, direction: 'E', crab: 100, egg: 100},
+            solution: {row: 0, col: 0, direction: 'E'}, // no need to count solution amounts
         };
     }
+
     set numRows(updatedRows) {
         let newGrid = [];
         if (updatedRows > this._numRows) {
@@ -300,6 +301,24 @@ class PlatypusWorld {
         Object.assign(this._grids.current, this._grids.initial);
         this.drawWorld();
     }
+
+    exportWorld() {
+        // make sure current is equivalent to initial
+        // this is a bit of a hack to export here
+        this._platypus.current = this._platypus.initial;
+        this._grids.current = this._grids.initial;
+        const export_string = JSON.stringify({
+            numRows: this._numRows,
+            numCols: this._numCols,
+            grids: this._grids,
+            platypus: this._platypus,
+            starterCode: cmEditor.state.doc.toString(),
+            instructions: document.querySelector('#instructions'),
+        }
+        );
+        console.log(export_string);
+    }
+
 }
 
 window.PlatypusWorld = PlatypusWorld;
@@ -333,4 +352,15 @@ window.init_main = () => {
     solutionCanvas.addEventListener("click", onMouseClick, false);
 
     world.drawWorld();
+
+    const currentValue = cmEditor.state.doc.toString();
+    const endPosition = currentValue.length;
+
+    cmEditor.dispatch({
+      changes: {
+        from: 0,
+        to: endPosition,
+        insert: "# TODO: Your code here:\n# __insertion will start here (leave this line)__",
+      },
+    });
 }
