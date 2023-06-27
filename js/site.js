@@ -288,6 +288,16 @@ const movePlatypus = (base) => {
 }
 window.movePlatypus = movePlatypus;
 
+const square_has = (obj) => {
+    return true;
+}
+window.square_has = square_has;
+
+const platypus_has = (obj) => {
+    return false;
+}
+window.platypus_has = platypus_has;
+
 const loadWorld = async (url, eraseCode) => {
     const pw = await fetch(url)
         .then(res => res.text())
@@ -600,7 +610,8 @@ async function transform_code_for_async(code) {
 
 parse_functions = {'input': [], 'time': ["sleep"], 'canvas': ["get_mouse_x", "get_mouse_y", "get_mouse_down"],
                    'turn_right': [], 'turn_left': [], 'swim': [], 'put_down': [],
-                   'pick_up': [], 'front_is_water': [], 'right_is_water': [], 'left_is_water': []}
+                   'pick_up': [], 'front_is_water': [], 'right_is_water': [], 'left_is_water': [], 
+                   'facing': [], 'square_has': [], 'platypus_has': []}
 def make_await(node):
     if hasattr(node.func, 'id') and node.func.id in parse_functions.keys():
         # top-level

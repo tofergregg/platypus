@@ -86,6 +86,16 @@ self.onmessage = async (event) => {
         check_is_water_js.result = event.data.result;
         return;
     }
+    
+    if (event.data.cmd === 'square_has') {
+        square_has_js.result = event.data.result;
+        return;
+    }
+    
+    if (event.data.cmd === 'platypus_has') {
+        platypus_has_js.result = event.data.result;
+        return;
+    }
 
     // make sure loading is done
     await pyodideReadyPromise;
@@ -266,6 +276,22 @@ async function check_is_water_js(area) {
     self.postMessage({platypusCommand: 'check_is_water()', area:area});
     await until(() => { return check_is_water_js.result !== undefined });
     return check_is_water_js.result;
+}
+
+async function square_has_js(obj) {
+    square_has_js.result = undefined; // prep for until
+    await sleep_fixed(0.3 * 50 / this.stepSleep);
+    self.postMessage({platypusCommand: 'square_has()', obj:obj});
+    await until(() => { return square_has_js.result !== undefined });
+    return square_has_js.result;
+}
+
+async function platypus_has_js(obj) {
+    platypus_has_js.result = undefined; // prep for until
+    await sleep_fixed(0.3 * 50 / this.stepSleep);
+    self.postMessage({platypusCommand: 'platypus_has()', obj:obj});
+    await until(() => { return platypus_has_js.result !== undefined });
+    return platypus_has_js.result;
 }
 
 const until = (predFn) => {
