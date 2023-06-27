@@ -314,14 +314,23 @@ class PlatypusWorld {
             platypus: this._platypus,
             starterCode: cmEditor.state.doc.toString(),
             instructions: document.querySelector('#instructions'),
-        }
-        );
+        }, null, 2);
         console.log(export_string);
+        copyToClipboard(export_string);
     }
 
 }
 
 window.PlatypusWorld = PlatypusWorld;
+
+const copyToClipboard = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      console.log('Content copied to clipboard');
+    } catch (err) {
+      console.error('Failed to copy: ', err);
+    }
+}
 
 const onMouseClick = (e) => {
     const objType = document.querySelector('input[name=object-name]:checked').value;

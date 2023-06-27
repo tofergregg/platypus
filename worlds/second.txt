@@ -41,7 +41,7 @@ The platypus must swim in water, and cannot go onto land.
 :endtext:
 
 final_objects:
-e...[pe]
+ee..[pe]
 .eeee
 
 platypus_final_direction:
