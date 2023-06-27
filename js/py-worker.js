@@ -32,14 +32,22 @@ const setupWorker = () => {
             }
             
             if (command == 'swim()') {
-                movePlatypus('w'); // counterclockwise
+                const success = movePlatypus('w'); // counterclockwise
+                pyodideWorker.postMessage({cmd: "swim", success: success});
             }
             
             if (command == 'put_down()') {
-                put_down(event.data.arg); // counterclockwise
+                const success = put_down(event.data.arg); // counterclockwise
+                pyodideWorker.postMessage({cmd: "put_down", success: success});
             }
             if (command == 'pick_up()') {
-                pick_up(event.data.arg); // counterclockwise
+                const success = pick_up(event.data.arg); // counterclockwise
+                pyodideWorker.postMessage({cmd: "pick_up", success: success});
+            }
+            
+            if (command == 'check_is_water()') {
+                const result = check_is_water(event.data.area); // counterclockwise
+                pyodideWorker.postMessage({cmd: "check_is_water", result: result});
             }
             return;
         }

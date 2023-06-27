@@ -186,6 +186,52 @@ window.rotatePlatypus = rotatePlatypus;
 
 const gridLoc = (row, col) => row * world.numCols + col;
 
+const check_is_water = (area) => {
+    // area: 'front', 'side', 'right'
+    let temp_direction = platypus.direction; // front
+    if (area == 'left') {
+        const directionMap = { E: 'N', S: 'E', W: 'S', N: 'W', };
+        temp_direction = directionMap[platypus.direction];
+    } else if (area == 'right') {
+        const directionMap = { E: 'S', S: 'W', W: 'N', N: 'E', };
+        temp_direction = directionMap[platypus.direction];
+    }
+
+    switch(temp_direction) {
+        case 'E':
+            if (platypus.col == platypus.num_cols - 1 ||
+                world.grid[gridLoc(platypus.row, platypus.col + 1)].base == 'l') {
+                // alert("Cannot go outside of grid!");
+                return false;
+            }
+            break;
+        case 'S':
+            if (platypus.row == platypus.num_rows - 1 ||
+                world.grid[gridLoc(platypus.row + 1, platypus.col)].base == 'l') {
+                // alert("Cannot go outside of grid!");
+                return false;
+            }
+            break;
+        case 'W':
+            if (platypus.col == 0 || 
+                world.grid[gridLoc(platypus.row, platypus.col - 1)].base == 'l') { 
+                // alert("Cannot go outside of grid!");
+                return false;
+            }
+            break;
+        case 'N':
+            if (platypus.row == 0 ||
+                world.grid[gridLoc(platypus.row - 1, platypus.col)].base == 'l') {
+                // alert("Cannot go outside of grid!");
+                return false;
+            }
+            break;
+    }
+    return true;
+}
+
+window.check_is_water = check_is_water;
+
 const movePlatypus = (base) => {
     // mode and color must match
     if (base != world.grid[gridLoc(platypus.row, platypus.col)].base) {
@@ -193,7 +239,7 @@ const movePlatypus = (base) => {
     }
 
     switch(platypus.direction) {
-            // cannot go out of bounds or through walls
+            // cannot go out of bounds or through land
         case 'E':
             if (platypus.col == platypus.num_cols - 1 ||
                 world.grid[gridLoc(platypus.row, platypus.col + 1)].base == 'l') {
@@ -554,7 +600,7 @@ async function transform_code_for_async(code) {
 
 parse_functions = {'input': [], 'time': ["sleep"], 'canvas': ["get_mouse_x", "get_mouse_y", "get_mouse_down"],
                    'turn_right': [], 'turn_left': [], 'swim': [], 'put_down': [],
-                   'pick_up': [],}
+                   'pick_up': [], 'front_is_water': [], 'right_is_water': [], 'left_is_water': []}
 def make_await(node):
     if hasattr(node.func, 'id') and node.func.id in parse_functions.keys():
         # top-level
@@ -628,7 +674,14 @@ window.run_pyodide = async () => {
     }
     transformedCode = wrap_code(transformedCode);
     const lineMap = findClosestMatches(transformedCode, originalCode);
-    
+
+    /*
+    let response = await fetch("js/kiraPlatypus/src/kiraPlatypus.zip");
+    let buffer = await response.arrayBuffer();
+    await pyodide.unpackArchive(buffer, '.zip', {extractDir: '/home/pyodide/'}); // by default, unpacks to the current dir
+    pyodide.pyimport("kiraPlatypus");
+    */
+
     // only run python_runner if we've stopped execution
     const python_runner_fn = () => {
         if (window.codeRunning) {

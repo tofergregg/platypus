@@ -9,3 +9,7 @@
 7. Add `all_items_held()` which returns a `dict`, e.g., `{'egg': 4, 'crab': 1}`
 8. Add `front_is_water()`, `left_is_water()`, `right_is_water()`
 9. Add `facing_north()`, `facing_south()`, `facing_east()`, `facing_west()`
+
+# Platypus commands:
+
+`swim()`: swims the platypus in the direction it is facing. The 

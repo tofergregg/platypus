@@ -5,6 +5,7 @@
 // and `.wasm` files as well:
 importScripts("https://cdn.jsdelivr.net/pyodide/v0.23.1/full/pyodide.js");
 importScripts("./drawingPyLib2.js");
+importScripts("./platypusPyLib.js");
 
 async function loadPyodideAndPackages() {
     let first = true;
@@ -65,6 +66,27 @@ self.onmessage = async (event) => {
         return;
     }
 
+    // platypus return values
+    if (event.data.cmd === 'swim') {
+        swim_js.success = event.data.success;
+        return;
+    }
+    
+    if (event.data.cmd === 'put_down') {
+        put_down_js.success = event.data.success;
+        return;
+    }
+    
+    if (event.data.cmd === 'pick_up') {
+        pick_up_js.success = event.data.success;
+        return;
+    }
+    
+    if (event.data.cmd === 'check_is_water') {
+        check_is_water_js.result = event.data.result;
+        return;
+    }
+
     // make sure loading is done
     await pyodideReadyPromise;
     self.pyodide.setInterruptBuffer(self.interruptBuffer);
@@ -80,13 +102,13 @@ self.onmessage = async (event) => {
 
     try {
         await self.pyodide.runPythonAsync(`
-        from js import turn_right, swim, turn_left, put_down, pick_up
         from js import input_fixed
         import asyncio
         import pyodide
         __builtins__.input = input_fixed
         `);
         await self.pyodide.runPythonAsync(drawingLib);
+        await self.pyodide.runPythonAsync(platypusLib);
         await self.pyodide.loadPackagesFromImports(python);
         python = fixTimeImport(python)
         let results = await self.pyodide.runPythonAsync(python);
@@ -203,27 +225,53 @@ function check_for_stop() {
 }
 
 // platypus commands
-async function turn_right() {
+async function turn_right_js() {
     await sleep_fixed(0.3 * 50 / this.stepSleep);
     self.postMessage({platypusCommand: 'turn_right()'});
 }
 
-async function turn_left() {
+async function turn_left_js() {
     await sleep_fixed(0.3 * 50 / this.stepSleep);
     self.postMessage({platypusCommand: 'turn_left()'});
 }
 
-async function swim() {
+async function swim_js() {
+    swim_js.success = undefined; // prep for until
     await sleep_fixed(0.3 * 50 / this.stepSleep);
     self.postMessage({platypusCommand: 'swim()'});
+    await until(() => { return swim_js.success !== undefined });
+    return swim_js.success;
 }
 
-async function put_down(obj) {
+async function put_down_js(obj) {
+    put_down_js.success = undefined; // prep for until
     await sleep_fixed(0.3 * 50 / this.stepSleep);
     self.postMessage({platypusCommand: 'put_down()', arg: obj});
+    await until(() => { return put_down_js.success !== undefined });
+    return put_down_js.success;
 }
 
-async function pick_up(obj) {
+async function pick_up_js(obj) {
+    pick_up_js.success = undefined; // prep for until
     await sleep_fixed(0.3 * 50 / this.stepSleep);
     self.postMessage({platypusCommand: 'pick_up()', arg: obj});
+    await until(() => { return pick_up_js.success !== undefined });
+    return pick_up_js.success;
 }
+
+async function check_is_water_js(area) {
+    // area is 'front', 'left', or 'right'
+    check_is_water_js.result = undefined; // prep for until
+    await sleep_fixed(0.3 * 50 / this.stepSleep);
+    self.postMessage({platypusCommand: 'check_is_water()', area:area});
+    await until(() => { return check_is_water_js.result !== undefined });
+    return check_is_water_js.result;
+}
+
+const until = (predFn) => {
+  const poll = (done) => (predFn() ? done() : setTimeout(() => {
+      poll(done);
+  }, 1));
+  return new Promise(poll);
+};
+
