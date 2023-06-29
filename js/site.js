@@ -23,8 +23,8 @@ const init_main = async (url='worlds/platypus1.json', first=true) => {
         const example = params.get('example');
         if (example) {
             url = 'worlds/' + example + '.json';
+            const exSel = document.querySelector('#examples').value = example;
         }
-        const exSel = document.querySelector('#examples').value = example;
     }
     const worldsData = await loadWorlds(mainCanvas, solutionCanvas, url);
     window.worlds = worldsData.worlds;
