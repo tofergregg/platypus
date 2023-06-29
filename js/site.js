@@ -10,13 +10,22 @@ const INIT_ROWS = 5;
 const INIT_COLS = 5;
 const INSERTION_CODE = '# __insertion will start here (leave this line)__';
 
-const init_main = async (url='worlds/platypus1.json') => {
+const init_main = async (url='worlds/platypus1.json', first=true) => {
     const mainCanvas = document.querySelector('#mainCanvas');
     const solutionCanvas = document.querySelector('#solutionCanvas');
 
     mainCanvas.width = mainCanvas.height = MAIN_CANVAS_WIDTH;
     solutionCanvas.width = solutionCanvas.height = FINAL_CANVAS_WIDTH;
 
+    // set option if url has option
+    if (first) {
+        const params = new URLSearchParams(window.location.search);
+        const example = params.get('example');
+        if (example) {
+            url = 'worlds/' + example + '.json';
+        }
+        const exSel = document.querySelector('#examples').value = example;
+    }
     const worldsData = await loadWorlds(mainCanvas, solutionCanvas, url);
     window.worlds = worldsData.worlds;
     populateWorldSelector(window.worlds.length);
@@ -32,19 +41,6 @@ const init_main = async (url='worlds/platypus1.json') => {
 
     loadPyodide().then(result => window.pyodide = result);
     window.stopExecution = false; // we aren't running
-    // set option if url has option
-    const params = new URLSearchParams(window.location.search);
-    const example = params.get('example');
-    if (example) {
-        const examples = document.getElementById('examples');
-        for (let i = 0; i < examples.options.length; i++) {
-            if (examples.options[i].text == example) {
-                examples.value = i;
-                window.update_terminal();
-                break;
-            }
-        }
-    }
     const canvas = document.getElementById('mainCanvas');
     // add objects array
     canvas._objects = [];
