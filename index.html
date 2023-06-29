@@ -13,18 +13,26 @@
         <h1>Kira Platypus</h1>
         <div class='parent'>
             <div class='child' id='left-panel'>
-                <button onclick='loadWorld("worlds/first.txt", true)'>First World</button>
-                <p>
-                <button onclick='loadWorld("worlds/second.txt", true)'>Second World</button>
-                <p>
-                <button onclick='loadWorld("worlds/river.txt", true)'>River</button>
+                Exercises:
+                <select name="examples" id="examples" onchange="runExercise()">
+                    <option value="platypus1">Platypus 1</option>
+                    <option value="platypus2">Platypus 2</option>
+                    <option value="platypus3">Platypus 3</option>
+                    <option value="platypus4">Platypus 4</option>
+                </select>
                 <p>
                 <div id="instructions"></div>
                 After you finish, the platypus world should look like this:<p>
-                <canvas id="finalCanvas"></canvas>
+                <canvas id="solutionCanvas"></canvas>
+                <span id='instructions'></span>
             </div>
             <div class='child' id='middle-panel'>
-                <canvas id="gridCanvas"></canvas>
+                <div id='world-numbering'>
+                World number: <select id="world-selector" onchange="changeWorld()"></select>
+                </div>
+                The platypus is carrying <span id='numEggsAndCrabs'>0 eggs and 0 crabs</span>.
+                <p>
+                <canvas id="mainCanvas"></canvas>
                 <br>
                 <button onclick='reset_platypus()'>Reset Platypus</button>
                 <br>
@@ -32,14 +40,14 @@
                 <p>
                 Terminal:<br>
                 <textarea id='console-output' rows="13" cols="40" spellcheck="false">
-</textarea>
+                </textarea>
 
             </div>
             <div class='child' id='right-panel'>
                 <button onclick="rotatePlatypus(true)">turn_right()</button>&nbsp;
                 <button onclick="rotatePlatypus(false)">turn_left()</button>&nbsp;
                 <button onclick="movePlatypus('w')">swim()</button>
-                <button onclick="pick_up('crab')">pick_up()</button>
+                <button onclick="pick_up('crab')">pick_up('crab')</button>
                 <button onclick="put_down('egg')">put_down('egg')</button>
 
                 <p>
@@ -52,6 +60,7 @@
             </div>
             <script src="https://cdn.jsdelivr.net/pyodide/v0.23.1/full/pyodide.js"></script>
             <script type='module' src='js/site.js'></script>
+            <script type='module' src="js/PlatypusWorld.js"></script>  
             <script src="js/editor.bundle.js"></script>  
     </body>
 </html>

@@ -1,14 +1,12 @@
-const WATER_COLOR = '#4EFFFF';
+const WATER_COLOR = '#A1E2FC';
 const GROUND_COLOR = '#FFF1DA';
-const MAIN_CANVAS_WIDTH = 400;
-const FINAL_CANVAS_WIDTH = 400;
 
 class PlatypusWorld {
-    constructor(numRows, numCols, _mainCanvas, _solutionCanvas) {
+    constructor(numRows, numCols, mainCanvas, solutionCanvas) {
         this._numRows = numRows;
         this._numCols = numCols;
-        this._mainCanvas = _mainCanvas;
-        this._solutionCanvas = _solutionCanvas;
+        this._mainCanvas = mainCanvas;
+        this._solutionCanvas = solutionCanvas;
         this._grids = {
             initial: [],
             current: [],
@@ -18,7 +16,7 @@ class PlatypusWorld {
         for (let row = 0; row < numRows; row++) {
             const newRow = [];
             for (let col = 0; col < numCols; col++) {
-                newRow.push({base: WATER_COLOR});
+                newRow.push({base: 'w'});
             }
             this._grids.initial.push(JSON.parse(JSON.stringify(newRow)));
             this._grids.current.push(JSON.parse(JSON.stringify(newRow)));
@@ -38,7 +36,7 @@ class PlatypusWorld {
             for (let row = 0; row < updatedRows - this._numRows; row++) {
             const newRow = [];
             for (let col = 0; col < this._numCols; col++) {
-                newRow.push({base: WATER_COLOR});
+                newRow.push({base: 'w'});
             }
             this._grids.initial.push(JSON.parse(JSON.stringify(newRow)));
             this._grids.current.push(JSON.parse(JSON.stringify(newRow)));
@@ -75,9 +73,9 @@ class PlatypusWorld {
             // add or remove columns
             if (updatedCols > this._numCols) {
                 for (let col = 0; col < updatedCols - this._numCols; col++) {
-                    this._grids.initial[row].push({base: WATER_COLOR});
-                    this._grids.current[row].push({base: WATER_COLOR});
-                    this._grids.solution[row].push({base: WATER_COLOR});
+                    this._grids.initial[row].push({base: 'w'});
+                    this._grids.current[row].push({base: 'w'});
+                    this._grids.solution[row].push({base: 'w'});
                 }
             } else {
                 for (let col = 0; col < this._numCols - updatedCols; col++) {
@@ -109,24 +107,25 @@ class PlatypusWorld {
         if (this._solutionCanvas) {
             this.drawWorldOnCanvas(this._solutionCanvas);
         }
+        updateEggsAndCrabs(this._platypus.current.egg, this._platypus.current.crab);
     }
     drawWorldOnCanvas(canvas) {
-        this._cellSize = canvas.width / (Math.max(this._numRows, this._numCols));
+        const cellSize = canvas.width / (Math.max(this._numRows, this._numCols));
         const context = canvas.getContext("2d");
         // Calculate the size of each cell (always square)
-        const width = this._cellSize * this.numCols;
-        const height = this._cellSize * this.numRows;
+        const width = cellSize * this.numCols;
+        const height = cellSize * this.numRows;
 
         // Clear the canvas
         context.clearRect(0, 0, canvas.width, canvas.height);
         context.beginPath();
         // Draw the vertical _grid lines
-        for (let x = 0; x <= width; x += this._cellSize) {
+        for (let x = 0; x <= width; x += cellSize) {
             context.moveTo(x, 0);
             context.lineTo(x, height);
         }
         // Draw the horizontal _grid lines
-        for (let y = 0; y <= height; y += this._cellSize) {
+        for (let y = 0; y <= height; y += cellSize) {
             context.moveTo(0, y);
             context.lineTo(width, y);
         }
@@ -144,12 +143,21 @@ class PlatypusWorld {
         let grid = this._grids.initial;
         for (let r = 0; r < this.numRows; r++) {
             for (let c = 0; c < this.numCols; c++) {
-            const xpos = c * this._cellSize + 1;
-            const ypos = r * this._cellSize + 1;
-            context.beginPath();
-            context.rect(xpos, ypos, this._cellSize - 2, this._cellSize - 2);
-            context.fillStyle = grid[r][c].base;
-            context.fill();
+                const xpos = c * cellSize + 1;
+                const ypos = r * cellSize + 1;
+                context.beginPath();
+                context.rect(xpos, ypos, cellSize - 2, cellSize - 2);
+                let baseColor;
+                switch (grid[r][c].base) {
+                    case 'w': 
+                        baseColor = WATER_COLOR;
+                        break;
+                    case 'l': 
+                        baseColor = GROUND_COLOR;
+                        break;
+                }
+                context.fillStyle = baseColor;
+                context.fill();
             }
         }
 
@@ -176,11 +184,11 @@ class PlatypusWorld {
                             continue;
                         }
                         const count = objs[obj];
-                        const x = col * this._cellSize;
-                        const y = row * this._cellSize;
+                        const x = col * cellSize;
+                        const y = row * cellSize;
                         const img = this._worldImages[obj[0]];
-                        context.drawImage(img, x, y, this._cellSize, this._cellSize);
-                        
+                        context.drawImage(img, x, y, cellSize, cellSize);
+
                     }
                 }
             }
@@ -191,9 +199,9 @@ class PlatypusWorld {
                 plat = this._platypus.solution;
             }
             const platImg = this._worldImages['plat' + plat.direction];
-            let x = plat.col * this._cellSize;
-            let y = plat.row * this._cellSize;
-            context.drawImage(platImg, x, y, this._cellSize, this._cellSize);
+            let x = plat.col * cellSize;
+            let y = plat.row * cellSize;
+            context.drawImage(platImg, x, y, cellSize, cellSize);
         }
         drawObjs();
     }
@@ -230,9 +238,10 @@ class PlatypusWorld {
         if (canvas == solutionCanvas) {
             plat = this._platypus.solution;
         }
-        const clickRow = Math.floor(y / this._cellSize);
-        const clickCol = Math.floor(x / this._cellSize);
-        if (this._grids.initial[clickRow][clickCol].base == WATER_COLOR) {
+        const cellSize = canvas.width / (Math.max(this._numRows, this._numCols));
+        const clickRow = Math.floor(y / cellSize);
+        const clickCol = Math.floor(x / cellSize);
+        if (this._grids.initial[clickRow][clickCol].base == 'w') {
             if (plat.row == clickRow && plat.col == clickCol) {
                 // rotate clockwise
                 switch(plat.direction) {
@@ -259,9 +268,10 @@ class PlatypusWorld {
         }
     }
 
-    addRemoveObject(x, y, canvas, obj, adding) {
-        const clickRow = Math.floor(y / this._cellSize);
-        const clickCol = Math.floor(x / this._cellSize);
+    addRemoveObject(x, y, canvas, obj, adding, force=false) {
+        const cellSize = canvas.width / (Math.max(this._numRows, this._numCols));
+        const clickRow = Math.floor(y / cellSize);
+        const clickCol = Math.floor(x / cellSize);
         let grid = this._grids.initial;
         if (canvas == this._solutionCanvas) {
             grid = this._grids.solution;
@@ -272,27 +282,35 @@ class PlatypusWorld {
             } else {
                 grid[clickRow][clickCol][obj]++;
             }
+        } else {
+            if (obj in grid[clickRow][clickCol]) {
+                grid[clickRow][clickCol][obj]--;
+                if (grid[clickRow][clickCol][obj] == 0) {
+                    delete grid[clickRow][clickCol][obj];
+                }
+            }
         }
         // update initial to current for drawing
         Object.assign(this._grids.current, this._grids.initial);
         this.drawWorld();
     }
-    
+
     addRemoveBase(x, y, canvas, base, adding) {
-        const clickRow = Math.floor(y / this._cellSize);
-        const clickCol = Math.floor(x / this._cellSize);
+        const cellSize = canvas.width / (Math.max(this._numRows, this._numCols));
+        const clickRow = Math.floor(y / cellSize);
+        const clickCol = Math.floor(x / cellSize);
         // always update both initial and solution,
         // becuase the base is always the same
         if (adding) {
             switch(base) {
                 case 'water':
-                    this._grids.initial[clickRow][clickCol].base = WATER_COLOR;
-                    this._grids.solution[clickRow][clickCol].base = WATER_COLOR;
+                    this._grids.initial[clickRow][clickCol].base = 'w';
+                    this._grids.solution[clickRow][clickCol].base = 'w';
                     break;
                 case 'land':
                     if (!(this._platypus.initial.row == clickRow && this._platypus.initial.col == clickCol)) {
-                        this._grids.initial[clickRow][clickCol].base = GROUND_COLOR;
-                        this._grids.solution[clickRow][clickCol].base = GROUND_COLOR;
+                        this._grids.initial[clickRow][clickCol].base = 'l';
+                        this._grids.solution[clickRow][clickCol].base = 'l';
                     }
                     break;
             }
@@ -307,69 +325,65 @@ class PlatypusWorld {
         // this is a bit of a hack to export here
         this._platypus.current = this._platypus.initial;
         this._grids.current = this._grids.initial;
-        const export_string = JSON.stringify({
+        const exportString = JSON.stringify({
             numRows: this._numRows,
             numCols: this._numCols,
             grids: this._grids,
             platypus: this._platypus,
-            starterCode: cmEditor.state.doc.toString(),
-            instructions: document.querySelector('#instructions'),
+            // starterCode: cmEditor.state.doc.toString(),
+            // instructions: document.querySelector('#instructions').value,
         }, null, 2);
-        console.log(export_string);
-        copyToClipboard(export_string);
+        console.log(exportString);
+        return exportString;
     }
 
+    populateData(data) {
+        this._grids = data.grids;
+        this._platypus = data.platypus;
+        this._instructions = data.instructions;
+        this._starterCode = data.starterCode;
+    }
 }
 
 window.PlatypusWorld = PlatypusWorld;
 
-const copyToClipboard = async (text) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      console.log('Content copied to clipboard');
-    } catch (err) {
-      console.error('Failed to copy: ', err);
+const loadWorlds = async (mainCanvas, solutionCanvas, url) => {
+    const worlds = [];
+    const response = await fetch(url);
+    const data = await response.json();
+    for (let worldData of data.worlds) {
+        const world = new PlatypusWorld(worldData.numRows, worldData.numCols, mainCanvas, solutionCanvas); 
+        world.populateData(worldData);
+        worlds.push(world);
+    }
+    return {
+        worlds: worlds,
+        instructions: data.instructions,
+        starterCode: data.starterCode,
+    };
+}
+window.loadWorlds = loadWorlds;
+
+const loadWorldFromJson = (mainCanvas, solutionCanvas, dataStr) => {
+    const data = JSON.parse(dataStr); 
+    const world = new PlatypusWorld(data.numRows, data.numCols, mainCanvas, solutionCanvas); 
+    world.populateData(data);
+    return world;
+}
+window.loadWorldFromJson = loadWorldFromJson;
+
+const updateEggsAndCrabs = (numEggs, numCrabs) => {
+    const eggCrabSpan = document.querySelector('#numEggsAndCrabs');
+    if (eggCrabSpan) {
+        let updateStr = numEggs.toString() + ' eggs and ' + numCrabs.toString() + ' crabs';
+        if (numEggs == 1) {
+            updateStr = updateStr.replace('eggs', 'egg');
+        }
+        
+        if (numCrabs == 1) {
+            updateStr = updateStr.replace('crabs', 'crab');
+        }
+        eggCrabSpan.innerText = updateStr;
     }
 }
 
-const onMouseClick = (e) => {
-    const objType = document.querySelector('input[name=object-name]:checked').value;
-    const adding = document.querySelector('input[name=add-remove-object]:checked').value == 'add-obj';
-    if (objType == 'platypus') {
-        window.world.addPlatypus(e.offsetX, e.offsetY, e.currentTarget);
-    }
-    if (objType == 'crab' || objType == 'egg') {
-        window.world.addRemoveObject(e.offsetX, e.offsetY, e.currentTarget, objType, adding);
-    }
-
-    if (objType == 'land' || objType == 'water') {
-        window.world.addRemoveBase(e.offsetX, e.offsetY, e.currentTarget, objType, adding);
-    }
-
-}
-
-window.init_main = () => {
-
-    const mainCanvas = document.querySelector('#mainCanvas');
-    const solutionCanvas = document.querySelector('#solutionCanvas');
-
-    mainCanvas.width = mainCanvas.height = MAIN_CANVAS_WIDTH;
-    solutionCanvas.width = solutionCanvas.height = FINAL_CANVAS_WIDTH;
-
-    window.world = new PlatypusWorld(2, 2, mainCanvas, solutionCanvas);
-    mainCanvas.addEventListener("click", onMouseClick, false);
-    solutionCanvas.addEventListener("click", onMouseClick, false);
-
-    world.drawWorld();
-
-    const currentValue = cmEditor.state.doc.toString();
-    const endPosition = currentValue.length;
-
-    cmEditor.dispatch({
-      changes: {
-        from: 0,
-        to: endPosition,
-        insert: "# TODO: Your code here:\n# __insertion will start here (leave this line)__",
-      },
-    });
-}

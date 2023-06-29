@@ -13,9 +13,9 @@
         <h1>Kira Platypus World Creator</h1>
         <div class='parent'>
             <div class='child' id='left-panel'>
-                Rows:<input type="number" id="rows" min="1" max="20" step="1" value="2" onchange="world.numRows=parseInt(document.querySelector('#rows').value)">
+                Rows:<input type="number" id="rows" min="1" max="20" step="1" value="2" onchange="worlds[document.querySelector('#world-selector').value].numRows=parseInt(document.querySelector('#rows').value)">
                 <br>
-                Cols:<input type="number" id="cols" min="1" max="20" step="1" value="2" onchange="world.numCols=parseInt(document.querySelector('#cols').value)">
+                Cols:<input type="number" id="cols" min="1" max="20" step="1" value="2" onchange="worlds[document.querySelector('#world-selector').value].numCols=parseInt(document.querySelector('#cols').value)">
                 <p>
                 <input type="radio" id="add-object" name="add-remove-object" value="add-obj" checked>Add<br>
                 <input type="radio" id="remove-object" name="add-remove-object" value="remove-obj">Remove<br>
@@ -26,20 +26,25 @@
                 <input type="radio" id="water" name="object-name" value="water">Water<br>
                 <input type="radio" id="land" name="object-name" value="land">Land<br>
                 <p>
-                <button onclick='world.exportWorld()'>Export World to clipboard</button>
+                <button onclick='exportWorlds()'>Export Worlds to clipboard</button>
                 <p>
                 <p>
             </div>
             <div class='child' id='middle-panel'>
+                Number of example worlds: <input type="number" class="num-items" id="num-worlds" min="1" step="1" value="1" onchange="updateNumWorlds()">
+                &nbsp; Current world: <select id="world-selector" onchange="changeWorld()"><option value="0" selected>1</option></select>
+                <p>
                 Initial world:
                 <p>
                 <canvas id="mainCanvas"></canvas>
                 <p>
-                Platypus initially carries <input type="number" class="num-items" id="num-crabs" min="0" step="1" value="100" onchange="world._platypus.initial.crab=document.querySelector('#num-crabs').value"> crabs.
+                Platypus initially carries <input type="number" class="num-items" id="num-crabs" min="0" step="1" value="100" onchange="worlds[document.querySelector('#world-selector').value]._platypus.initial.crab=parseInt(document.querySelector('#num-crabs').value)"> crabs.
                 <br>
-                Platypus initially carries <input type="number" class="num-items" id="num-eggs" min="0" step="1" value="100" onchange="world._platypus.initial.egg=document.querySelector('#num-eggs').value"> eggs.
+                Platypus initially carries <input type="number" class="num-items" id="num-eggs" min="0" step="1" value="100" onchange="worlds[document.querySelector('#world-selector').value]._platypus.initial.egg=parseInt(document.querySelector('#num-eggs').value)"> eggs.
             </div>
             <div class='child' id='final-panel'>
+                &nbsp; 
+                <p>
                 Final world:
                 <p>
                 <canvas id="solutionCanvas"></canvas>
@@ -60,6 +65,7 @@
             </div>
         </div>
         <script type='module' src='js/PlatypusWorld.js'></script>  
+        <script src='js/world-creator-init.js'></script>  
         <script src="js/editor.bundle.js"></script>  
 
     </body>

@@ -1,0 +1,136 @@
+{
+  "numRows": 3,
+  "numCols": 3,
+  "grids": {
+    "initial": [
+      [
+        {
+          "base": "#4EFFFF"
+        },
+        {
+          "base": "#4EFFFF"
+        },
+        {
+          "base": "#FFF1DA"
+        }
+      ],
+      [
+        {
+          "base": "#FFF1DA"
+        },
+        {
+          "base": "#4EFFFF"
+        },
+        {
+          "base": "#FFF1DA"
+        }
+      ],
+      [
+        {
+          "base": "#4EFFFF"
+        },
+        {
+          "base": "#4EFFFF"
+        },
+        {
+          "base": "#4EFFFF"
+        }
+      ]
+    ],
+    "current": [
+      [
+        {
+          "base": "#4EFFFF"
+        },
+        {
+          "base": "#4EFFFF"
+        },
+        {
+          "base": "#FFF1DA"
+        }
+      ],
+      [
+        {
+          "base": "#FFF1DA"
+        },
+        {
+          "base": "#4EFFFF"
+        },
+        {
+          "base": "#FFF1DA"
+        }
+      ],
+      [
+        {
+          "base": "#4EFFFF"
+        },
+        {
+          "base": "#4EFFFF"
+        },
+        {
+          "base": "#4EFFFF"
+        }
+      ]
+    ],
+    "solution": [
+      [
+        {
+          "base": "#4EFFFF"
+        },
+        {
+          "base": "#4EFFFF",
+          "crab": 1
+        },
+        {
+          "base": "#FFF1DA"
+        }
+      ],
+      [
+        {
+          "base": "#FFF1DA"
+        },
+        {
+          "base": "#4EFFFF",
+          "crab": 1
+        },
+        {
+          "base": "#FFF1DA"
+        }
+      ],
+      [
+        {
+          "base": "#4EFFFF"
+        },
+        {
+          "base": "#4EFFFF"
+        },
+        {
+          "base": "#4EFFFF"
+        }
+      ]
+    ]
+  },
+  "platypus": {
+    "initial": {
+      "row": 0,
+      "col": 0,
+      "direction": "E",
+      "crab": 100,
+      "egg": 100
+    },
+    "current": {
+      "row": 0,
+      "col": 0,
+      "direction": "E",
+      "crab": 100,
+      "egg": 100
+    },
+    "solution": {
+      "row": 2,
+      "col": 1,
+      "direction": "S"
+    }
+  },
+  "starterCode": "swim()\nturn_right()\nput_down('crab')\nswim()\nput_down('crab')\nswim()\n# __insertion will start here (leave this line)__",
+  "instructions": "This code is complete. The platypus starts facing the East side of the world in the water. The blue squares are water, and the tan squares are land. Our platypus can only swim and cannot go onto land.\n\nThe square in front of the platypus and the square below that are clear. Swim the platypus forward and put down a crab. Then put down another crab below that. The platypus should end by facing South on the square below the two crabs."
+}
