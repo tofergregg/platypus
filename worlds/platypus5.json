@@ -787,6 +787,6 @@
       }
     }
   ],
-  "starterCode": "# __insertion will start here (leave this line)__",
-  "instructions": "The platypus starts off somewhere at the bottom of the world, facing down. Move the platypus and place an egg at every square in the top row of the world. Leave the platypus at the upper right corner of the world, facing right."
+  "starterCode": "turn_right()\nturn_right()\nwhile front_is_water():\n    swim()\nturn_left()\nswim()\nturn_right()\nturn_right()\nwhile front_is_water():\n    put_down('egg')\n    swim()\nput_down('egg') # off by one!\n# __insertion will start here (leave this line)__",
+  "instructions": "The platypus starts off somewhere at the bottom of the world, facing down. Move the platypus and place an egg at every square in the top row of the world. Leave the platypus at the upper right corner of the world, facing right. \n\nThe provided code has a bug! It only works for the first world and not the other worlds. Can you figure out how to fix the bug so that it works with all the worlds?"
 }
