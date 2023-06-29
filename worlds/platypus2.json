@@ -7,10 +7,10 @@
         "initial": [
           [
             {
-              "base": "w"
+              "base": "l"
             },
             {
-              "base": "l"
+              "base": "w"
             },
             {
               "base": "w"
@@ -21,10 +21,10 @@
               "base": "w"
             },
             {
-              "base": "l"
+              "base": "w"
             },
             {
-              "base": "w"
+              "base": "l"
             }
           ],
           [
@@ -42,10 +42,10 @@
         "current": [
           [
             {
-              "base": "w"
+              "base": "l"
             },
             {
-              "base": "l"
+              "base": "w"
             },
             {
               "base": "w"
@@ -56,10 +56,10 @@
               "base": "w"
             },
             {
-              "base": "l"
+              "base": "w"
             },
             {
-              "base": "w"
+              "base": "l"
             }
           ],
           [
@@ -77,34 +77,34 @@
         "solution": [
           [
             {
-              "base": "w"
+              "base": "l"
             },
             {
-              "base": "l"
+              "base": "w"
             },
             {
               "base": "w"
             }
           ],
           [
+            {
+              "base": "w"
+            },
             {
               "base": "w",
               "egg": 1
             },
             {
               "base": "l"
-            },
-            {
-              "base": "w"
             }
           ],
           [
             {
-              "base": "w",
-              "crab": 1
+              "base": "w"
             },
             {
-              "base": "w"
+              "base": "w",
+              "crab": 1
             },
             {
               "base": "w"
@@ -115,21 +115,21 @@
       "platypus": {
         "initial": {
           "row": 0,
-          "col": 0,
+          "col": 1,
           "direction": "E",
           "crab": 1,
           "egg": 1
         },
         "current": {
           "row": 0,
-          "col": 0,
+          "col": 1,
           "direction": "E",
           "crab": 1,
           "egg": 1
         },
         "solution": {
           "row": 2,
-          "col": 0,
+          "col": 1,
           "direction": "S"
         }
       }
@@ -141,10 +141,10 @@
         "initial": [
           [
             {
-              "base": "l"
+              "base": "w"
             },
             {
-              "base": "w"
+              "base": "l"
             },
             {
               "base": "w"
@@ -155,10 +155,10 @@
               "base": "w"
             },
             {
-              "base": "w"
+              "base": "l"
             },
             {
-              "base": "l"
+              "base": "w"
             }
           ],
           [
@@ -176,10 +176,10 @@
         "current": [
           [
             {
-              "base": "l"
+              "base": "w"
             },
             {
-              "base": "w"
+              "base": "l"
             },
             {
               "base": "w"
@@ -190,10 +190,10 @@
               "base": "w"
             },
             {
-              "base": "w"
+              "base": "l"
             },
             {
-              "base": "l"
+              "base": "w"
             }
           ],
           [
@@ -211,34 +211,34 @@
         "solution": [
           [
             {
-              "base": "l"
+              "base": "w"
             },
             {
-              "base": "w"
+              "base": "l"
             },
             {
               "base": "w"
             }
           ],
           [
-            {
-              "base": "w"
-            },
             {
               "base": "w",
               "egg": 1
             },
             {
               "base": "l"
+            },
+            {
+              "base": "w"
             }
           ],
           [
             {
-              "base": "w"
-            },
-            {
               "base": "w",
               "crab": 1
+            },
+            {
+              "base": "w"
             },
             {
               "base": "w"
@@ -249,21 +249,21 @@
       "platypus": {
         "initial": {
           "row": 0,
-          "col": 1,
+          "col": 0,
           "direction": "E",
           "crab": 1,
           "egg": 1
         },
         "current": {
           "row": 0,
-          "col": 1,
+          "col": 0,
           "direction": "E",
           "crab": 1,
           "egg": 1
         },
         "solution": {
           "row": 2,
-          "col": 1,
+          "col": 0,
           "direction": "S"
         }
       }
