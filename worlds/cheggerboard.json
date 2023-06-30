@@ -1,0 +1,1667 @@
+{
+  "worlds": [
+    {
+      "numRows": 5,
+      "numCols": 5,
+      "grids": {
+        "initial": [
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ]
+        ],
+        "current": [
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ]
+        ],
+        "solution": [
+          [
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            }
+          ]
+        ]
+      },
+      "platypus": {
+        "initial": {
+          "row": 4,
+          "col": 0,
+          "direction": "E",
+          "crab": 100,
+          "egg": 100
+        },
+        "current": {
+          "row": 4,
+          "col": 0,
+          "direction": "E",
+          "crab": 100,
+          "egg": 100
+        },
+        "solution": {
+          "row": 0,
+          "col": 4,
+          "direction": "E"
+        }
+      }
+    },
+    {
+      "numRows": 5,
+      "numCols": 6,
+      "grids": {
+        "initial": [
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ]
+        ],
+        "current": [
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ]
+        ],
+        "solution": [
+          [
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            }
+          ],
+          [
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            }
+          ],
+          [
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            }
+          ]
+        ]
+      },
+      "platypus": {
+        "initial": {
+          "row": 4,
+          "col": 0,
+          "direction": "E",
+          "crab": 100,
+          "egg": 100
+        },
+        "current": {
+          "row": 4,
+          "col": 0,
+          "direction": "E",
+          "crab": 100,
+          "egg": 100
+        },
+        "solution": {
+          "row": 0,
+          "col": 5,
+          "direction": "E"
+        }
+      }
+    },
+    {
+      "numRows": 8,
+      "numCols": 8,
+      "grids": {
+        "initial": [
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ]
+        ],
+        "current": [
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ]
+        ],
+        "solution": [
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            }
+          ],
+          [
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            }
+          ],
+          [
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            }
+          ],
+          [
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            }
+          ],
+          [
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            }
+          ]
+        ]
+      },
+      "platypus": {
+        "initial": {
+          "row": 7,
+          "col": 0,
+          "direction": "E",
+          "crab": 100,
+          "egg": 100
+        },
+        "current": {
+          "row": 7,
+          "col": 0,
+          "direction": "E",
+          "crab": 100,
+          "egg": 100
+        },
+        "solution": {
+          "row": 0,
+          "col": 7,
+          "direction": "E"
+        }
+      }
+    },
+    {
+      "numRows": 6,
+      "numCols": 3,
+      "grids": {
+        "initial": [
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ]
+        ],
+        "current": [
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ]
+        ],
+        "solution": [
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            }
+          ]
+        ]
+      },
+      "platypus": {
+        "initial": {
+          "row": 5,
+          "col": 0,
+          "direction": "E",
+          "crab": 100,
+          "egg": 100
+        },
+        "current": {
+          "row": 5,
+          "col": 0,
+          "direction": "E",
+          "crab": 100,
+          "egg": 100
+        },
+        "solution": {
+          "row": 0,
+          "col": 2,
+          "direction": "E"
+        }
+      }
+    },
+    {
+      "numRows": 2,
+      "numCols": 2,
+      "grids": {
+        "initial": [
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ]
+        ],
+        "current": [
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ]
+        ],
+        "solution": [
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            }
+          ],
+          [
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            }
+          ]
+        ]
+      },
+      "platypus": {
+        "initial": {
+          "row": 1,
+          "col": 0,
+          "direction": "E",
+          "crab": 100,
+          "egg": 100
+        },
+        "current": {
+          "row": 1,
+          "col": 0,
+          "direction": "E",
+          "crab": 100,
+          "egg": 100
+        },
+        "solution": {
+          "row": 0,
+          "col": 1,
+          "direction": "E"
+        }
+      }
+    }
+  ],
+  "starterCode": "def checkerboard():\n    pass\n\ndef draw_even_row():\n    pass\n\ndef draw_odd_row():\n    pass\n# __insertion will start here (leave this line)__",
+  "instructions": "Fill the board with rows of eggs to produce a \"checkerboard\" pattern. The platypus starts on the bottom left corner facing East. The bottom row has eggs in the first, third, fifth, etc. columns. The next row up has eggs in the second, fourth, sixth, etc. columns. The platypus ends at the top right corner, facing East.\n\nSuggestion: write draw_even_row() and draw_odd_row() functions for different rows. This is much easier than trying to zig-zag back and forth. With the even/odd strategy, all rows start by being drawn from the left-most column."
+}
