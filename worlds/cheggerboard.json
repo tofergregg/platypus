@@ -1662,6 +1662,6 @@
       }
     }
   ],
-  "starterCode": "def checkerboard():\n    pass\n\ndef draw_even_row():\n    pass\n\ndef draw_odd_row():\n    pass\n# __insertion will start here (leave this line)__",
+  "starterCode": "def checkerboard():\n    pass\n\ndef draw_even_row():\n    pass\n\ndef draw_odd_row():\n    pass\n\nif __name__ == '__main__':\n    checkerboard()# __insertion will start here (leave this line)__",
   "instructions": "Fill the board with rows of eggs to produce a \"checkerboard\" pattern. The platypus starts on the bottom left corner facing East. The bottom row has eggs in the first, third, fifth, etc. columns. The next row up has eggs in the second, fourth, sixth, etc. columns. The platypus ends at the top right corner, facing East.\n\nSuggestion: write draw_even_row() and draw_odd_row() functions for different rows. This is much easier than trying to zig-zag back and forth. With the even/odd strategy, all rows start by being drawn from the left-most column."
 }
