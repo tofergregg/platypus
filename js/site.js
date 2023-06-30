@@ -461,6 +461,7 @@ async function transform_code_for_async(code) {
     const transform_code = `import ast
 
 parse_functions = {'input': [], 'time': ["sleep"], 'canvas': ["get_mouse_x", "get_mouse_y", "get_mouse_down", "set_canvas_size"],
+                   'Canvas': ['create'],
                    'turn_right': [], 'turn_left': [], 'swim': [], 'put_down': [],
                    'pick_up': [], 'front_is_water': [], 'right_is_water': [], 'left_is_water': [], 
                    'facing': [], 'count': []}

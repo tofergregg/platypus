@@ -5,10 +5,15 @@ from js import clearTerminal
 from js import getCanvasSize
 
 class Canvas:
-    def __init__(self):
-        self.width = 100 # default for now
-        self.height = 100 # default for now
+    def __init__(self, width=100, height=100):
+        self.width = width 
+        self.height = height
         self.objects = []
+
+    @classmethod
+    async def create(self):
+        canvasSize = await getCanvasSize()
+        return Canvas(canvasSize['width'], canvasSize['height'])
 
     async def set_canvas_size(self):
         canvasSize = await getCanvasSize()
