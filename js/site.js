@@ -501,6 +501,7 @@ window.run_pyodide = async () => {
     const originalCode = window.cmEditor.state.doc.toString();
     let transformedCode = await transform_code_for_async(originalCode);
     if (transformedCode == "") {
+        updateCorrectBox('❌');
         return;
     }
     transformedCode = wrap_code(transformedCode);

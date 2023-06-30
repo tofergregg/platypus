@@ -158,6 +158,19 @@ class PlatypusWorld {
                 }
                 context.fillStyle = baseColor;
                 context.fill();
+                if (grid[r][c].base == 'l') {
+                    // draw land
+                    const waitForLand = () => {
+                        if (!this._worldImages['land'].loaded) {
+                            setTimeout(waitForLand, 50);
+                        } else {
+                            const img = this._worldImages['land'];
+                            context.drawImage(img, xpos, ypos, cellSize, cellSize);
+                        }
+                    }
+                    waitForLand();
+
+                }
             }
         }
 
@@ -167,7 +180,6 @@ class PlatypusWorld {
             for (let obj in this._worldImages) {
                 if (!this._worldImages[obj].loaded) {
                     setTimeout(drawObjs, 50);
-                    return;
                 }
             }
             // okay, all images are loaded!
@@ -186,7 +198,7 @@ class PlatypusWorld {
                         const count = objs[obj];
                         const x = col * cellSize;
                         const y = row * cellSize;
-                        const img = this._worldImages[obj[0]];
+                        const img = this._worldImages[obj];
                         context.drawImage(img, x, y, cellSize, cellSize);
 
                     }
@@ -208,25 +220,28 @@ class PlatypusWorld {
 
     loadWorldImages() {
         this._worldImages = {
-            c: new Image(), // crab
-            e: new Image(), // egg
+            crab: new Image(),
+            egg: new Image(),
             platE: new Image(),
             platS: new Image(),
             platW: new Image(),
             platN: new Image(),
+            land: new Image(),
         }
-        this._worldImages.c.onload = () => this.processLoadedImage('c');
-        this._worldImages.e.onload = () => this.processLoadedImage('e');
+        this._worldImages.crab.onload = () => this.processLoadedImage('crab');
+        this._worldImages.egg.onload = () => this.processLoadedImage('egg');
         this._worldImages.platE.onload = () => this.processLoadedImage('platE');
         this._worldImages.platS.onload = () => this.processLoadedImage('platS');
         this._worldImages.platW.onload = () => this.processLoadedImage('platW');
         this._worldImages.platN.onload = () => this.processLoadedImage('platN');
-        this._worldImages.c.src = "img/crab.png";
-        this._worldImages.e.src = "img/egg.png";
+        this._worldImages.land.onload = () => this.processLoadedImage('land');
+        this._worldImages.crab.src = "img/crab.png";
+        this._worldImages.egg.src = "img/egg.png";
         this._worldImages.platE.src = "img/platypus-facing-E.png";
         this._worldImages.platS.src = "img/platypus-facing-S.png";
         this._worldImages.platW.src = "img/platypus-facing-W.png";
         this._worldImages.platN.src = "img/platypus-facing-N.png";
+        this._worldImages.land.src = "img/land.png";
     }
 
     processLoadedImage(img) {
