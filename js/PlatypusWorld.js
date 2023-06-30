@@ -278,7 +278,7 @@ class PlatypusWorld {
                 plat.col = clickCol;
             }
             // update initial to current for drawing
-            Object.assign(this._platypus.current, this._platypus.initial);
+            this._grids.current = JSON.parse(JSON.stringify(this._grids.initial));
             this.drawWorld();
         }
     }
@@ -306,7 +306,7 @@ class PlatypusWorld {
             }
         }
         // update initial to current for drawing
-        Object.assign(this._grids.current, this._grids.initial);
+        this._grids.current = JSON.parse(JSON.stringify(this._grids.initial));
         this.drawWorld();
     }
 
@@ -331,7 +331,7 @@ class PlatypusWorld {
             }
         }
         // update initial to current for drawing
-        Object.assign(this._grids.current, this._grids.initial);
+        this._grids.current = JSON.parse(JSON.stringify(this._grids.initial));
         this.drawWorld();
     }
 
