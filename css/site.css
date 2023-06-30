@@ -7,6 +7,9 @@ button {
     font-size: 12px;
 }
 
+code.b {
+    font-weight: bold;
+}
 
 .editor-div {
     width: 600px;
@@ -41,3 +44,5 @@ button {
 #speed-slider {
     width:60%;
 }
+
+

@@ -13,6 +13,25 @@
         <h1>Kira Platypus</h1>
         <div class='parent'>
             <div class='child' id='left-panel'>
+                <button id='docsButton' onclick='showDocs(true)' style='font-size: 20px'>Show Commands</button>
+                <div id='documentation' hidden>
+                    <p>
+                    <b>Basic Commands:</b><br>
+                    <code class="b">turn_right()</code>: turns the platypus to the right from the directon it is facing (clockwise).<br>
+                    <code class="b">turn_left()</code>: turns the platypus to the left from the direction it is facing (counterclockwise).<br>
+                    <code class="b">swim()</code>: swims the platypus in the direction it is facing. The front must be water, not land or out of bounds.<br>
+                    <code class="b">pick_up(object)</code>: picks up the object (<code>'crab'</code> or <code>'egg'</code>). There must be at least one of that object on that grid space.<br>
+                    <code class="b">put_down(object)</code>: puts down the object (<code>'crab'</code> or <code>'egg'</code>). The platypus must have at least one of that object.<br>
+<br>
+                    <b>Conditions:</b><br>
+                    <code class="b">front_is_water()</code>: boolean, <code>True</code> if the front is water, <code>False</code> if the front is land or out of bounds. <br>
+                    <code class="b">left_is_water()</code>: boolean, <code>True</code> if the square to the left of the direction the platypus is facing is water, <code>False</code> if the left is land or out of bounds. <br>
+                    <code class="b">right_is_water()</code>: boolean, <code>True</code> if the square to the right of the direction the platypus is facing is water, <code>False</code> if the right is land or out of bounds. <br>
+                    <code class="b">facing(direction)</code>: boolean, <code>True</code> if the platypus is facing the direction (<code>'E'</code>, <code>'S'</code>, <code>'W'</code>, or <code>'N'</code>).<br>
+                    <code class="b">count(who, obj)</code>: integer, counts whether <code>who</code> (<code>'platypus'</code> or <code>'square'</code> has object (<code>'crab'</code> or <code>'egg'</code>)<br>
+<br>
+                </div>
+                <p>
                 Exercises:
                 <select name="examples" id="examples" onchange="runExercise()">
                     <option value="platypus0" selected>Platypus 0</option>

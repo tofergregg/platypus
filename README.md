@@ -6,9 +6,9 @@
 (done)4. Examples and exercises
 5. Clean up code
 (done)6. Add count for objects, e.g., `how_many('egg')` returns the number of eggs the platypus is holding.
-7. Add `all_items_held()` which returns a `dict`, e.g., `{'egg': 4, 'crab': 1}`
-(done)8. Add `front_is_water()`, `left_is_water()`, `right_is_water()`
+(done)7. Add `front_is_water()`, `left_is_water()`, `right_is_water()`
 (done -- added `facing(direction)` 9. Add `facing_north()`, `facing_south()`, `facing_east()`, `facing_west()`
+8. Add `count(who, obj)` to return whether `'platypus'` or `'square'` has either an `'egg'` or a `'crab'`.
 
 # Platypus commands:
 

@@ -2066,3 +2066,16 @@ const updateCorrectBox = (val) => {
         correctBox.innerText = val;
     }
 }
+
+window.showDocs = (show) => {
+    const docsButton = document.querySelector('#docsButton');
+    const docsDiv = document.querySelector('#documentation');
+    docsDiv.hidden = !show;
+    if (show) {
+        docsButton.innerText = "Hide Commands";
+        docsButton.setAttribute( "onClick", "javascript: showDocs(false);" );
+    } else {
+        docsButton.innerText = "Show Commands";
+        docsButton.setAttribute( "onClick", "javascript: showDocs(true);" );
+    }
+}
