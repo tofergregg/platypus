@@ -1,5 +1,5 @@
 const platypusLib = `from js import turn_right_js, swim_js, turn_left_js, put_down_js, pick_up_js
-from js import check_is_water_js, square_has_js, platypus_has_js
+from js import check_is_water_js, facing_js, count_js
 
 async def turn_right():
     await turn_right_js()
@@ -34,11 +34,11 @@ async def right_is_water():
     result = await check_is_water_js('right')
     return result 
 
-async def square_has(obj):
-    result = await square_has_js(obj)
+async def facing(direction):
+    result = await facing_js(direction)
     return result
 
-async def platypus_has(obj):
-    result = await platypus_has_js(obj)
+async def count(who, obj):
+    result = await count_js(who, obj)
     return result
 `

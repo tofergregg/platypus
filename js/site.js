@@ -202,15 +202,28 @@ const movePlatypus = (base) => {
 }
 window.movePlatypus = movePlatypus;
 
-const square_has = (obj) => {
-    return true;
+const facing = (direction) => {
+    return window.world._platypus.current.direction == direction;
 }
-window.square_has = square_has;
+window.facing = facing;
 
-const platypus_has = (obj) => {
-    return false;
+const count = (who, obj) => {
+    let objects;
+    switch(who) {
+        case 'platypus':
+            objects = window.world._platypus.current;
+            break;
+        case 'square':
+            objects = window.world._grids.current[window.world._platypus.current.row][window.world._platypus.current.col];
+            break;
+    }
+    if (obj in objects) {
+        return objects[obj];
+    } else {
+        return 0;
+    }
 }
-window.platypus_has = platypus_has;
+window.count = count;
 
 const pick_up = (item) => {
     const grid = window.world._grids.current;
@@ -450,7 +463,7 @@ async function transform_code_for_async(code) {
 parse_functions = {'input': [], 'time': ["sleep"], 'canvas': ["get_mouse_x", "get_mouse_y", "get_mouse_down"],
                    'turn_right': [], 'turn_left': [], 'swim': [], 'put_down': [],
                    'pick_up': [], 'front_is_water': [], 'right_is_water': [], 'left_is_water': [], 
-                   'facing': [], 'square_has': [], 'platypus_has': []}
+                   'facing': [], 'count': []}
 def make_await(node):
     if hasattr(node.func, 'id') and node.func.id in parse_functions.keys():
         # top-level

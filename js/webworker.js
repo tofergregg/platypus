@@ -87,13 +87,13 @@ self.onmessage = async (event) => {
         return;
     }
     
-    if (event.data.cmd === 'square_has') {
-        square_has_js.result = event.data.result;
+    if (event.data.cmd === 'facing') {
+        facing_js.result = event.data.result;
         return;
     }
     
-    if (event.data.cmd === 'platypus_has') {
-        platypus_has_js.result = event.data.result;
+    if (event.data.cmd === 'count') {
+        count_js.result = event.data.result;
         return;
     }
 
@@ -278,20 +278,20 @@ async function check_is_water_js(area) {
     return check_is_water_js.result;
 }
 
-async function square_has_js(obj) {
-    square_has_js.result = undefined; // prep for until
+async function facing_js(direction) {
+    facing_js.result = undefined; // prep for until
     await sleep_fixed(0.3 * 50 / this.stepSleep);
-    self.postMessage({platypusCommand: 'square_has()', obj:obj});
-    await until(() => { return square_has_js.result !== undefined });
-    return square_has_js.result;
+    self.postMessage({platypusCommand: 'facing()', direction:direction});
+    await until(() => { return facing_js.result !== undefined });
+    return facing_js.result;
 }
 
-async function platypus_has_js(obj) {
-    platypus_has_js.result = undefined; // prep for until
+async function count_js(who, obj) {
+    count_js.result = undefined; // prep for until
     await sleep_fixed(0.3 * 50 / this.stepSleep);
-    self.postMessage({platypusCommand: 'platypus_has()', obj:obj});
-    await until(() => { return platypus_has_js.result !== undefined });
-    return platypus_has_js.result;
+    self.postMessage({platypusCommand: 'count()', who:who, obj:obj});
+    await until(() => { return count_js.result !== undefined });
+    return count_js.result;
 }
 
 const until = (predFn) => {

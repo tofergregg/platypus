@@ -50,14 +50,14 @@ const setupWorker = () => {
                 pyodideWorker.postMessage({cmd: "check_is_water", result: result});
             }
             
-            if (command == 'square_has()') {
-                const result = square_has(event.data.obj);
-                pyodideWorker.postMessage({cmd: "square_has", result: result});
+            if (command == 'facing()') {
+                const result = facing(event.data.direction);
+                pyodideWorker.postMessage({cmd: "facing", result: result});
             }
             
-            if (command == 'platypus_has()') {
-                const result = platypus_has(event.data.obj);
-                pyodideWorker.postMessage({cmd: "platypus_has", result: result});
+            if (command == 'count()') {
+                const result = count(event.data.who, event.data.obj);
+                pyodideWorker.postMessage({cmd: "count", result: result});
             }
             return;
         }
