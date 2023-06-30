@@ -1,6 +1,6 @@
 const updateCanvas = (cmd, dict) => {
     dict = Object.fromEntries(dict); // was a Map
-    const canvas = document.getElementById('theCanvas');
+    const canvas = document.getElementById('mainCanvas');
     if (cmd == 'create') {
         canvas._objects.push(dict);
     }
@@ -42,7 +42,7 @@ const updateCanvas = (cmd, dict) => {
 }
 
 const drawAllObjects = () => {
-    const canvas = document.getElementById('theCanvas');
+    const canvas = document.getElementById('mainCanvas');
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 

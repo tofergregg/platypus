@@ -96,6 +96,13 @@ const setupWorker = () => {
 
             return;
         }
+        
+        if (event.data.cmd === 'getCanvasSize') {
+            const canvas = document.querySelector('#mainCanvas');
+            pyodideWorker.postMessage({cmd: "canvas_size", width: canvas.width, height: canvas.height});
+
+            return;
+        }
         if (event.data.cmd === 'clearTerminal') {
             const terminal = document.getElementById('console-output');
             terminal.value = '';

@@ -2,12 +2,18 @@ const drawingLib = `from js import updateCanvas
 from js import getMousePos 
 from js import getMouseDown
 from js import clearTerminal 
+from js import getCanvasSize
 
 class Canvas:
-    def __init__(self, width=285, height=244):
-        self.width = width 
-        self.height = height
+    def __init__(self):
+        self.width = 100 # default for now
+        self.height = 100 # default for now
         self.objects = []
+
+    async def set_canvas_size(self):
+        canvasSize = await getCanvasSize()
+        self.width = canvasSize['width']
+        self.height = canvasSize['height']
 
     def move(self, obj, x_amount, y_amount):
         self.objects[obj]['coords'][0] += x_amount

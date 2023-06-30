@@ -50,6 +50,13 @@ self.onmessage = async (event) => {
         getMouseDown.y = event.data.y;
         return;
     }
+    
+    if (event.data.cmd === "canvas_size") {
+        getCanvasSize.width = event.data.width;
+        getCanvasSize.height = event.data.height;
+        return;
+    }
+
     if (event.data.cmd === 'run_speed') {
         this.stepSleep = event.data.stepSleep; 
         return;
@@ -214,6 +221,24 @@ function getMouseDown(x_or_y) {
     self.postMessage({cmd: 'getMouseDown'});
     return new Promise((r) => setTimeout(() => {
         waitForMouseDown(r);
+    }));
+}
+
+const waitForCanvasSize = (r) => {
+    if (getCanvasSize.width !== null && getCanvasSize.height !== null) {
+        return r(pyodide.toPy({'width': getCanvasSize.width, 'height': getCanvasSize.height}));
+    }
+    setTimeout(() => {
+        waitForCanvasSize(r);
+    });
+}
+
+function getCanvasSize() {
+    getCanvasSize.width = null;
+    getCanvasSize.height = null;
+    self.postMessage({cmd: 'getCanvasSize'});
+    return new Promise((r) => setTimeout(() => {
+        waitForCanvasSize(r);
     }));
 }
 
