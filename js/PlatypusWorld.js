@@ -278,7 +278,7 @@ class PlatypusWorld {
                 plat.col = clickCol;
             }
             // update initial to current for drawing
-            this._grids.current = JSON.parse(JSON.stringify(this._grids.initial));
+            this._platypus.current = JSON.parse(JSON.stringify(this._platypus.initial));
             this.drawWorld();
         }
     }
