@@ -14,17 +14,26 @@
 
 ### Basic commands: 
 `turn_right()`: turns the platypus clockwise.
+
 `turn_left()`: turns the platypus counterclockwise.
+
 `swim()`: swims the platypus in the direction it is facing. The front must be water, not land or out of bounds.
+
 `pick_up(object)`: picks up the object (`'crab'` or `'egg'`). There must be at least one of that object on that grid space.
+
 `put_down(object)`: puts down the object (`'crab'` or `'egg'`). The platypus must have at least one of that object.
 
 ### Conditions:
 `front_is_water()`: boolean, `True` if the front is water, `False` if the front is land or out of bounds. 
+
 `left_is_water()`: boolean, `True` if the square to the left of the direction the platypus is facing is water, `False` if the left is land or out of bounds. 
+
 `right_is_water()`: boolean, `True` if the square to the right of the direction the platypus is facing is water, `False` if the right is land or out of bounds. 
+
 `facing(direction)`: boolean, `True` if the platypus is facing the direction (`'E'`, `'S'`, `'W'`, or `'N'`).
+
 `square_has(obj)`: boolean, `True` if the square has the object (`'crab'` or `'egg'`), `False` otherwise.
+
 `platypus_has(obj)`: boolean, `True` if the platypus has the object (`'crab'` or `'egg'`), `False` otherwise.
 
 
