@@ -337,9 +337,8 @@ class PlatypusWorld {
 
     exportWorld() {
         // make sure current is equivalent to initial
-        // this is a bit of a hack to export here
-        this._platypus.current = this._platypus.initial;
-        this._grids.current = this._grids.initial;
+        this._platypus.current = JSON.parse(JSON.stringify(this._platypus.initial));
+        this._grids.current = JSON.parse(JSON.stringify(this._grids.initial));
         const exportString = JSON.stringify({
             numRows: this._numRows,
             numCols: this._numCols,

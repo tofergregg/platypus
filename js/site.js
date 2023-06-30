@@ -344,6 +344,32 @@ const mouseDown = (event) => {
     window.lastMouseDown = {x: x, y: y};
 }
 
+const runExercise = () => {
+    const ex = 'worlds/' + document.querySelector('#examples').value + '.json';
+    init_main(ex);
+}
+window.runExercise = runExercise;
+
+const updateCorrectBox = (val) => {
+    const correctBox = document.querySelector('#correctBox');
+    if (correctBox) {
+        correctBox.innerText = val;
+    }
+}
+
+window.showDocs = (show) => {
+    const docsButton = document.querySelector('#docsButton');
+    const docsDiv = document.querySelector('#documentation');
+    docsDiv.hidden = !show;
+    if (show) {
+        docsButton.innerText = "Hide Commands";
+        docsButton.setAttribute( "onClick", "javascript: showDocs(false);" );
+    } else {
+        docsButton.innerText = "Show Commands";
+        docsButton.setAttribute( "onClick", "javascript: showDocs(true);" );
+    }
+}
+
 async function python_runner(script, context, lineMap) {
     try {
         const stepSpeed = document.querySelector('#speed-slider').value;
@@ -2052,30 +2078,4 @@ if __name__ == "__main__":
     const search = examplesSel.options[examplesSel.selectedIndex].innerText;
     const fullURL = window.location.origin + window.location.pathname + '?example=' + search;
     window.history.pushState({},"", fullURL);
-}
-
-const runExercise = () => {
-    const ex = 'worlds/' + document.querySelector('#examples').value + '.json';
-    init_main(ex);
-}
-window.runExercise = runExercise;
-
-const updateCorrectBox = (val) => {
-    const correctBox = document.querySelector('#correctBox');
-    if (correctBox) {
-        correctBox.innerText = val;
-    }
-}
-
-window.showDocs = (show) => {
-    const docsButton = document.querySelector('#docsButton');
-    const docsDiv = document.querySelector('#documentation');
-    docsDiv.hidden = !show;
-    if (show) {
-        docsButton.innerText = "Hide Commands";
-        docsButton.setAttribute( "onClick", "javascript: showDocs(false);" );
-    } else {
-        docsButton.innerText = "Show Commands";
-        docsButton.setAttribute( "onClick", "javascript: showDocs(true);" );
-    }
 }
