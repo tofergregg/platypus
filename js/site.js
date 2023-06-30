@@ -10,7 +10,7 @@ const INIT_ROWS = 5;
 const INIT_COLS = 5;
 const INSERTION_CODE = '# __insertion will start here (leave this line)__';
 
-const init_main = async (url='worlds/platypus1.json', first=true) => {
+const init_main = async (url='worlds/platypus1.json', first=false) => {
     const mainCanvas = document.querySelector('#mainCanvas');
     const solutionCanvas = document.querySelector('#solutionCanvas');
 
@@ -32,6 +32,7 @@ const init_main = async (url='worlds/platypus1.json', first=true) => {
     window.currentWorldIdx = 0;
     window.world = worlds[currentWorldIdx];
     window.world.drawWorld();
+    updateCorrectBox('');
 
     // add instructions and starter code
     document.querySelector('#instructions').innerText = worldsData.instructions;
@@ -74,6 +75,7 @@ const changeWorld = () => {
     const world = window.worlds[currentWorldIdx];
     window.world = world;
     world.drawWorld();
+    updateCorrectBox('');
 }
 window.changeWorld = changeWorld;
 
@@ -350,6 +352,7 @@ async function python_runner(script, context, lineMap) {
             console.log("pyodideWorker return results: ", results);
         } else if (error) {
             console.log("pyodideWorker error: ", error);
+            updateCorrectBox('❌');
             // put partial error in the terminal
             if (error.startsWith('Traceback')) {
                 const firstNewline = error.indexOf('\n');
@@ -362,12 +365,37 @@ async function python_runner(script, context, lineMap) {
                 terminal.blur();
                 terminal.focus();
             }
+        } else {
+            // compare final to initial
+            const solutionWorld = window.world._grids.solution;
+            const solutionPlat = window.world._platypus.solution;
+            const currentWorld = window.world._grids.current;
+            const currentPlat = window.world._platypus.current;
+            if (deepEqual(currentWorld, solutionWorld) && platsEqual(currentPlat, solutionPlat)) {
+                updateCorrectBox('✅');
+            } else {
+                updateCorrectBox('❌');
+            }
         }
     } catch (e) {
         console.log(
             `Error in pyodideWorker at ${e.filename}, Line: ${e.lineno}, ${e.message}`
         );
+        updateCorrectBox('❌');
     }
+}
+
+const platsEqual = (plat1, plat2) => {
+    return plat1.row == plat2.row && plat1.col == plat2.col && plat1.direction == plat2.direction;
+}
+
+// found here: https://stackoverflow.com/a/32922084/561677
+const deepEqual = (x, y) => {
+    const ok = Object.keys, tx = typeof x, ty = typeof y;
+    return x && y && tx === 'object' && tx === ty ? (
+        ok(x).length === ok(y).length &&
+        ok(x).every(key => deepEqual(x[key], y[key]))
+    ) : (x === y);
 }
 
 const updateLineNumbers = (text, lineMap) => {
@@ -459,6 +487,10 @@ window.reset_platypus = () => {
     window.world._grids.current = JSON.parse(JSON.stringify(window.world._grids.initial));
     window.world._platypus.current = JSON.parse(JSON.stringify(window.world._platypus.initial));
     window.world.drawWorld();
+    const correctBox = document.querySelector('#correctBox');
+    if (correctBox) {
+        correctBox.innerText = '';
+    }
 }
 
 window.run_pyodide = async () => {
@@ -2026,3 +2058,10 @@ const runExercise = () => {
     init_main(ex);
 }
 window.runExercise = runExercise;
+
+const updateCorrectBox = (val) => {
+    const correctBox = document.querySelector('#correctBox');
+    if (correctBox) {
+        correctBox.innerText = val;
+    }
+}

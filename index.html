@@ -20,6 +20,7 @@
                     <option value="platypus3">Platypus 3</option>
                     <option value="platypus4">Platypus 4</option>
                     <option value="platypus5">Platypus 5</option>
+                    <option value="platypus6">Platypus 6</option>
                 </select>
                 <p>
                 <div id="instructions"></div>
@@ -35,7 +36,7 @@
                 <p>
                 <canvas id="mainCanvas"></canvas>
                 <br>
-                <button onclick='reset_platypus()'>Reset Platypus</button>
+                <button onclick='reset_platypus()'>Reset Platypus</button><span id='correctBox' style='float: right'></span>
                 <br>
                 Speed: <input type="range" id="speed-slider" min="10" max="1000" value="50" onchange="updateSpeed()">
                 <p>
