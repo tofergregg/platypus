@@ -10,7 +10,7 @@ const INIT_ROWS = 5;
 const INIT_COLS = 5;
 const INSERTION_CODE = '# __insertion will start here (leave this line)__';
 
-const init_main = async (url='worlds/platypus1.json', first=false) => {
+const init_main = async (url='worlds/platypus0.json', first=false) => {
     const mainCanvas = document.querySelector('#mainCanvas');
     const solutionCanvas = document.querySelector('#solutionCanvas');
 

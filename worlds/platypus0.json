@@ -18,18 +18,18 @@
           ],
           [
             {
-              "base": "w"
+              "base": "l"
             },
             {
               "base": "w"
             },
             {
-              "base": "w"
+              "base": "l"
             }
           ],
           [
             {
-              "base": "l"
+              "base": "w"
             },
             {
               "base": "w"
@@ -53,18 +53,18 @@
           ],
           [
             {
-              "base": "w"
+              "base": "l"
             },
             {
               "base": "w"
             },
             {
-              "base": "w"
+              "base": "l"
             }
           ],
           [
             {
-              "base": "l"
+              "base": "w"
             },
             {
               "base": "w"
@@ -77,11 +77,23 @@
         "solution": [
           [
             {
+              "base": "w"
+            },
+            {
               "base": "w",
               "egg": 1
             },
             {
-              "base": "w"
+              "base": "l"
+            }
+          ],
+          [
+            {
+              "base": "l"
+            },
+            {
+              "base": "w",
+              "egg": 1
             },
             {
               "base": "l"
@@ -92,23 +104,10 @@
               "base": "w"
             },
             {
-              "base": "w",
-              "egg": 1
-            },
-            {
-              "base": "w"
-            }
-          ],
-          [
-            {
-              "base": "l"
-            },
-            {
               "base": "w"
             },
             {
-              "base": "w",
-              "egg": 1
+              "base": "w"
             }
           ]
         ]
@@ -118,26 +117,193 @@
           "row": 0,
           "col": 0,
           "direction": "E",
-          "crab": 3,
-          "egg": 3
+          "crab": 0,
+          "egg": 2
         },
         "current": {
           "row": 0,
           "col": 0,
           "direction": "E",
-          "crab": 3,
-          "egg": 3
+          "crab": 0,
+          "egg": 2
         },
         "solution": {
           "row": 2,
-          "col": 2,
-          "direction": "E"
+          "col": 1,
+          "direction": "S"
         }
       }
     },
     {
       "numRows": 4,
-      "numCols": 5,
+      "numCols": 3,
+      "grids": {
+        "initial": [
+          [
+            {
+              "base": "l"
+            },
+            {
+              "base": "l"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "l"
+            }
+          ],
+          [
+            {
+              "base": "l"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ]
+        ],
+        "current": [
+          [
+            {
+              "base": "l"
+            },
+            {
+              "base": "l"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "l"
+            }
+          ],
+          [
+            {
+              "base": "l"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ]
+        ],
+        "solution": [
+          [
+            {
+              "base": "l"
+            },
+            {
+              "base": "l"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "l"
+            }
+          ],
+          [
+            {
+              "base": "l"
+            },
+            {
+              "base": "w",
+              "egg": 1
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            },
+            {
+              "base": "w"
+            }
+          ]
+        ]
+      },
+      "platypus": {
+        "initial": {
+          "row": 1,
+          "col": 0,
+          "direction": "E",
+          "crab": 0,
+          "egg": 2
+        },
+        "current": {
+          "row": 1,
+          "col": 0,
+          "direction": "E",
+          "crab": 0,
+          "egg": 2
+        },
+        "solution": {
+          "row": 3,
+          "col": 1,
+          "direction": "S"
+        }
+      }
+    },
+    {
+      "numRows": 5,
+      "numCols": 3,
       "grids": {
         "initial": [
           [
@@ -145,8 +311,24 @@
               "base": "w"
             },
             {
+              "base": "l"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
               "base": "w"
             },
+            {
+              "base": "w"
+            },
+            {
+              "base": "l"
+            }
+          ],
+          [
             {
               "base": "l"
             },
@@ -162,12 +344,6 @@
               "base": "w"
             },
             {
-              "base": "w"
-            },
-            {
-              "base": "w"
-            },
-            {
               "base": "l"
             },
             {
@@ -176,33 +352,10 @@
           ],
           [
             {
-              "base": "l"
-            },
-            {
               "base": "w"
             },
             {
               "base": "w"
-            },
-            {
-              "base": "w"
-            },
-            {
-              "base": "l"
-            }
-          ],
-          [
-            {
-              "base": "w"
-            },
-            {
-              "base": "l"
-            },
-            {
-              "base": "w"
-            },
-            {
-              "base": "l"
             },
             {
               "base": "w"
@@ -215,8 +368,24 @@
               "base": "w"
             },
             {
+              "base": "l"
+            },
+            {
+              "base": "w"
+            }
+          ],
+          [
+            {
               "base": "w"
             },
+            {
+              "base": "w"
+            },
+            {
+              "base": "l"
+            }
+          ],
+          [
             {
               "base": "l"
             },
@@ -232,12 +401,6 @@
               "base": "w"
             },
             {
-              "base": "w"
-            },
-            {
-              "base": "w"
-            },
-            {
               "base": "l"
             },
             {
@@ -246,33 +409,10 @@
           ],
           [
             {
-              "base": "l"
-            },
-            {
               "base": "w"
             },
             {
               "base": "w"
-            },
-            {
-              "base": "w"
-            },
-            {
-              "base": "l"
-            }
-          ],
-          [
-            {
-              "base": "w"
-            },
-            {
-              "base": "l"
-            },
-            {
-              "base": "w"
-            },
-            {
-              "base": "l"
             },
             {
               "base": "w"
@@ -282,17 +422,10 @@
         "solution": [
           [
             {
-              "base": "w",
-              "egg": 1
-            },
-            {
               "base": "w"
             },
             {
               "base": "l"
-            },
-            {
-              "base": "w"
             },
             {
               "base": "w"
@@ -303,17 +436,10 @@
               "base": "w"
             },
             {
-              "base": "w",
-              "egg": 1
-            },
-            {
               "base": "w"
             },
             {
               "base": "l"
-            },
-            {
-              "base": "w"
             }
           ],
           [
@@ -326,12 +452,6 @@
             {
               "base": "w",
               "egg": 1
-            },
-            {
-              "base": "w"
-            },
-            {
-              "base": "l"
             }
           ],
           [
@@ -342,10 +462,16 @@
               "base": "l"
             },
             {
+              "base": "w",
+              "egg": 1
+            }
+          ],
+          [
+            {
               "base": "w"
             },
             {
-              "base": "l"
+              "base": "w"
             },
             {
               "base": "w"
@@ -355,231 +481,27 @@
       },
       "platypus": {
         "initial": {
-          "row": 0,
-          "col": 0,
+          "row": 2,
+          "col": 1,
           "direction": "E",
-          "crab": 3,
-          "egg": 3
+          "crab": 0,
+          "egg": 2
         },
         "current": {
-          "row": 0,
-          "col": 0,
+          "row": 2,
+          "col": 1,
           "direction": "E",
-          "crab": 3,
-          "egg": 3
+          "crab": 0,
+          "egg": 2
         },
         "solution": {
-          "row": 2,
+          "row": 4,
           "col": 2,
-          "direction": "E"
-        }
-      }
-    },
-    {
-      "numRows": 4,
-      "numCols": 4,
-      "grids": {
-        "initial": [
-          [
-            {
-              "base": "w"
-            },
-            {
-              "base": "w"
-            },
-            {
-              "base": "l"
-            },
-            {
-              "base": "w"
-            }
-          ],
-          [
-            {
-              "base": "w"
-            },
-            {
-              "base": "w"
-            },
-            {
-              "base": "w"
-            },
-            {
-              "base": "l"
-            }
-          ],
-          [
-            {
-              "base": "l"
-            },
-            {
-              "base": "w"
-            },
-            {
-              "base": "w"
-            },
-            {
-              "base": "w"
-            }
-          ],
-          [
-            {
-              "base": "w"
-            },
-            {
-              "base": "l"
-            },
-            {
-              "base": "w"
-            },
-            {
-              "base": "l"
-            }
-          ]
-        ],
-        "current": [
-          [
-            {
-              "base": "w"
-            },
-            {
-              "base": "w"
-            },
-            {
-              "base": "l"
-            },
-            {
-              "base": "w"
-            }
-          ],
-          [
-            {
-              "base": "w"
-            },
-            {
-              "base": "w"
-            },
-            {
-              "base": "w"
-            },
-            {
-              "base": "l"
-            }
-          ],
-          [
-            {
-              "base": "l"
-            },
-            {
-              "base": "w"
-            },
-            {
-              "base": "w"
-            },
-            {
-              "base": "w"
-            }
-          ],
-          [
-            {
-              "base": "w"
-            },
-            {
-              "base": "l"
-            },
-            {
-              "base": "w"
-            },
-            {
-              "base": "l"
-            }
-          ]
-        ],
-        "solution": [
-          [
-            {
-              "base": "w",
-              "egg": 1
-            },
-            {
-              "base": "w"
-            },
-            {
-              "base": "l"
-            },
-            {
-              "base": "w"
-            }
-          ],
-          [
-            {
-              "base": "w"
-            },
-            {
-              "base": "w",
-              "egg": 1
-            },
-            {
-              "base": "w"
-            },
-            {
-              "base": "l"
-            }
-          ],
-          [
-            {
-              "base": "l"
-            },
-            {
-              "base": "w"
-            },
-            {
-              "base": "w",
-              "egg": 1
-            },
-            {
-              "base": "w"
-            }
-          ],
-          [
-            {
-              "base": "w"
-            },
-            {
-              "base": "l"
-            },
-            {
-              "base": "w"
-            },
-            {
-              "base": "l"
-            }
-          ]
-        ]
-      },
-      "platypus": {
-        "initial": {
-          "row": 0,
-          "col": 0,
-          "direction": "E",
-          "crab": 10,
-          "egg": 10
-        },
-        "current": {
-          "row": 0,
-          "col": 0,
-          "direction": "E",
-          "crab": 10,
-          "egg": 10
-        },
-        "solution": {
-          "row": 2,
-          "col": 2,
-          "direction": "E"
+          "direction": "S"
         }
       }
     }
   ],
-  "starterCode": "# TODO: Your code here!\n# __insertion will start here (leave this line)__",
-  "instructions": "The platypus starts in the upper left corner of the world, facing East. Put down an egg in that square. Then put another egg in the square diagonally below-right, and a third egg in the square diagonally below-right of that."
+  "starterCode": "swim()\nput_down('egg')\nturn_right()\nswim()\nput_down('egg')\nswim()\n# __insertion will start here (leave this line)__",
+  "instructions": "This code is complete - run it to see how it works. The platypus starts facing the right side of the world. The square in front of the platypus and the square below that are water. The platypus can only swim across water. Move the platypus forward and put down an egg on that square. Then put down an egg on the square below that. Then swim forward."
 }
