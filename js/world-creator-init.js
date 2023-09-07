@@ -115,7 +115,7 @@ const copyToClipboard = async (text) => {
     }
 }
 
-const async uploadWorlds = () => {
+const uploadWorlds = async () => {
     const worldsArr = [];
     for (let world of worlds) {
         worldsArr.push(JSON.parse(world.exportWorld()));
