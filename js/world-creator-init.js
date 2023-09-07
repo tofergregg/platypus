@@ -115,3 +115,28 @@ const copyToClipboard = async (text) => {
     }
 }
 
+const uploadWorlds = () => {
+    const worldsArr = [];
+    for (let world of worlds) {
+        worldsArr.push(JSON.parse(world.exportWorld()));
+    }
+
+    const worldsJson = JSON.stringify({
+        worlds: worldsArr,
+        starterCode: cmEditor.state.doc.toString(),
+        instructions: document.querySelector('#instructions').value,
+    }, null, 2);
+    const response = await fetch('https://yourfirstyearteaching.com/cgi-bin/platypus/saveNewWorlds.py', {
+    method: "POST", 
+    cache: "no-cache", 
+    headers: {
+      "Content-Type": "application/json",
+    },
+        body: worldsJson, // body data type must match "Content-Type" header
+    });
+    const urlSuffix = await response.json();
+    // urlSuffix should be in the form wrd1-wrd2-wrd3-wrd4
+    window.history.pushState('shared kira code', '', '?shared='+urlSuffix)
+    await copyToClipboard(window.location.href);
+    alert("You've shared your code!\nLink copied to clipboard:\n" + window.location.href);
+}
