@@ -140,5 +140,6 @@ const uploadWorlds = async () => {
     // await copyToClipboard(window.location.href);
     // alert("You've shared your code!\nLink copied to clipboard:\n" + window.location.href);
     const completeUrl = 'https://yourfirstyearteaching.com/platypus/?shared='+urlSuffix;
+    await copyToClipboard(completeUrl);
     alert("You've shared your code!\nLink copied to clipboard:\n" + completeUrl);
 }
