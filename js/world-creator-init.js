@@ -60,6 +60,7 @@ const updateNumWorlds = () => {
         }
         opt += '>' + (i + 1) + '</option>\n'; // off-by-one for human consumption
         selector.innerHTML += opt;
+        selector.selected = true;
     }
 
     if (window.numWorlds > oldNumWorlds) {
