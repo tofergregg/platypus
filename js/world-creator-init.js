@@ -51,7 +51,7 @@ const updateNumWorlds = () => {
     const oldNumWorlds = window.numWorlds;
     window.numWorlds = parseInt(document.querySelector('#num-worlds').value);
     if (window.numWorlds < oldNumWorlds) {
-        if (!window.prompt("Are you sure you want to remove the last world?")) {
+        if (!window.confirm("Are you sure you want to remove the last world?")) {
             return;
         }
     }
