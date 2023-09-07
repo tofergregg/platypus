@@ -49,9 +49,11 @@ const onMouseClick = (e) => {
 
 const updateNumWorlds = () => {
     const oldNumWorlds = window.numWorlds;
-    window.numWorlds = parseInt(document.querySelector('#num-worlds').value);
+    numWorldsSelector = document.querySelector('#num-worlds');
+    window.numWorlds = parseInt(numWorldsSelector.value);
     if (window.numWorlds < oldNumWorlds) {
         if (!window.confirm("Are you sure you want to remove the last world?")) {
+            numWorldsSelector.value = oldNumWorlds.toString();
             return;
         }
     }
