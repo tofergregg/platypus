@@ -71,7 +71,7 @@ const updateNumWorlds = () => {
             window.worlds.push(newWorld);
         }
     }
-    
+    changeWorld(); 
 }
 
 const changeWorld = () => {
