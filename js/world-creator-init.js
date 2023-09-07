@@ -139,7 +139,7 @@ const uploadWorlds = async () => {
     // window.history.pushState('shared kira code', '', '?shared='+urlSuffix)
     // await copyToClipboard(window.location.href);
     // alert("You've shared your code!\nLink copied to clipboard:\n" + window.location.href);
-    const completeUrl = 'https://yourfirstyearteaching.com/platypus/?shared='+urlSuffix;
+    const completeUrl = 'https://yourfirstyearteaching.com/platypus/?testing='+urlSuffix;
     await copyToClipboard(completeUrl);
     alert("You've shared your code!\nLink copied to clipboard:\n" + completeUrl);
 }
