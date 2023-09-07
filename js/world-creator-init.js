@@ -136,7 +136,9 @@ const uploadWorlds = async () => {
     });
     const urlSuffix = await response.json();
     // urlSuffix should be in the form wrd1-wrd2-wrd3-wrd4
-    window.history.pushState('shared kira code', '', '?shared='+urlSuffix)
-    await copyToClipboard(window.location.href);
-    alert("You've shared your code!\nLink copied to clipboard:\n" + window.location.href);
+    // window.history.pushState('shared kira code', '', '?shared='+urlSuffix)
+    // await copyToClipboard(window.location.href);
+    // alert("You've shared your code!\nLink copied to clipboard:\n" + window.location.href);
+    const completeUrl = 'https://yourfirstyearteaching.com/platypus/?shared='+urlSuffix;
+    alert("You've shared your code!\nLink copied to clipboard:\n" + completeUrl);
 }
