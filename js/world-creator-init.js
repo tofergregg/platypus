@@ -55,12 +55,11 @@ const updateNumWorlds = () => {
     removeOptions(selector);
     for (let i = 0; i < window.numWorlds; i++) {
         let opt = '<option value="' + i + '"';
-        if (worldIdx == i) { 
+        if (i == window.numWorlds - 1) { 
             opt += ' selected';
         }
         opt += '>' + (i + 1) + '</option>\n'; // off-by-one for human consumption
         selector.innerHTML += opt;
-        selector.selected = true;
     }
 
     if (window.numWorlds > oldNumWorlds) {
