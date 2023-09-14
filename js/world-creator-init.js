@@ -45,6 +45,9 @@ const onMouseClick = (e) => {
     if (objType == 'land' || objType == 'water') {
         world.addRemoveBase(e.offsetX, e.offsetY, e.currentTarget, objType, adding);
     }
+    if (objType == 'color') {
+        world.addRemoveColor(e.offsetX, e.offsetY, e.currentTarget, objType, adding);
+    }
 }
 
 const updateNumWorlds = () => {
