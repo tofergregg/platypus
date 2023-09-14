@@ -47,7 +47,7 @@ const onMouseClick = (e) => {
     }
     if (objType == 'color') {
         const color = document.querySelector('input[name=color-name]:checked').value;
-        world.addRemoveColor(e.offsetX, e.offsetY, e.currentTarget, objType, color, adding);
+        world.addRemoveColor(e.offsetX, e.offsetY, e.currentTarget, objType, adding, color);
     }
 }
 
