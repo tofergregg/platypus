@@ -103,8 +103,13 @@ class PlatypusWorld {
     }
 
     drawWorld() {
+        this._mainCanvas = document.querySelector('#mainCanvas');
+        this._solutionCanvas = document.querySelector('#solutionCanvas');
+        const instructionsDiv = document.querySelector('#instructions');
+        
         this.drawWorldOnCanvas(this._mainCanvas);
         if (this._solutionCanvas) {
+            this._solutionCanvas.width = this._solutionCanvas.height = instructionsDiv.offsetWidth;
             this.drawWorldOnCanvas(this._solutionCanvas);
         }
         updateEggsAndCrabs(this._platypus.current.egg, this._platypus.current.crab);
@@ -138,9 +143,11 @@ class PlatypusWorld {
         context.stroke();
 
         // Draw the colored squares
-        // You cannot change the land and water
-        // so it will always be from the initial grid
-        let grid = this._grids.initial;
+        // Water can be colorful, but land must have the land icon
+        let grid = this._grids.current;
+        if (canvas == this._solutionCanvas) {
+            grid = this._grids.solution;
+        }
         for (let r = 0; r < this.numRows; r++) {
             for (let c = 0; c < this.numCols; c++) {
                 const xpos = c * cellSize + 1;
@@ -155,6 +162,8 @@ class PlatypusWorld {
                     case 'l': 
                         baseColor = GROUND_COLOR;
                         break;
+                    default:
+                        baseColor = grid[r][c].base;
                 }
                 context.fillStyle = baseColor;
                 context.fill();
@@ -185,7 +194,7 @@ class PlatypusWorld {
             // okay, all images are loaded!
             // draw the non-platypus objects
             let grid = this._grids.current;
-            if (canvas == solutionCanvas) {
+            if (canvas == this._solutionCanvas) {
                 grid = this._grids.solution;
             }
             for (let row = 0; row < this._numRows; row++) {
@@ -207,7 +216,7 @@ class PlatypusWorld {
 
             // draw the platypus
             let plat = this._platypus.current;
-            if (canvas == solutionCanvas) {
+            if (canvas == this._solutionCanvas) {
                 plat = this._platypus.solution;
             }
             const platImg = this._worldImages['plat' + plat.direction];
@@ -235,13 +244,13 @@ class PlatypusWorld {
         this._worldImages.platW.onload = () => this.processLoadedImage('platW');
         this._worldImages.platN.onload = () => this.processLoadedImage('platN');
         this._worldImages.land.onload = () => this.processLoadedImage('land');
-        this._worldImages.crab.src = "img/crab.png";
-        this._worldImages.egg.src = "img/egg.png";
-        this._worldImages.platE.src = "img/platypus-facing-E.png";
-        this._worldImages.platS.src = "img/platypus-facing-S.png";
-        this._worldImages.platW.src = "img/platypus-facing-W.png";
-        this._worldImages.platN.src = "img/platypus-facing-N.png";
-        this._worldImages.land.src = "img/land.png";
+        this._worldImages.crab.src = "images/platypus/crab.png";
+        this._worldImages.egg.src = "images/platypus/egg.png";
+        this._worldImages.platE.src = "images/platypus/platypus-facing-E.png";
+        this._worldImages.platS.src = "images/platypus/platypus-facing-S.png";
+        this._worldImages.platW.src = "images/platypus/platypus-facing-W.png";
+        this._worldImages.platN.src = "images/platypus/platypus-facing-N.png";
+        this._worldImages.land.src = "images/platypus/land.png";
     }
 
     processLoadedImage(img) {
@@ -334,24 +343,6 @@ class PlatypusWorld {
         this._grids.current = JSON.parse(JSON.stringify(this._grids.initial));
         this.drawWorld();
     }
-    
-    addRemoveColor(x, y, canvas, obj, adding, force=false) {
-        const cellSize = canvas.width / (Math.max(this._numRows, this._numCols));
-        const clickRow = Math.floor(y / cellSize);
-        const clickCol = Math.floor(x / cellSize);
-        let grid = this._grids.initial;
-        if (canvas == this._solutionCanvas) {
-            grid = this._grids.solution;
-        }
-        if (adding) {
-            grid[clickRow][clickCol].base = 'red';
-        } else {
-            grid[clickRow][clickCol].base = 'w';
-        }
-        // update initial to current for drawing
-        this._grids.current = JSON.parse(JSON.stringify(this._grids.initial));
-        this.drawWorld();
-    }
 
     exportWorld() {
         // make sure current is equivalent to initial
@@ -365,7 +356,7 @@ class PlatypusWorld {
             // starterCode: cmEditor.state.doc.toString(),
             // instructions: document.querySelector('#instructions').value,
         }, null, 2);
-        console.log(exportString);
+        // console.log(exportString);
         return exportString;
     }
 
@@ -377,7 +368,9 @@ class PlatypusWorld {
     }
 }
 
-window.PlatypusWorld = PlatypusWorld;
+if (typeof window !== "undefined") {
+    window.PlatypusWorld = PlatypusWorld;
+}
 
 const loadWorlds = async (mainCanvas, solutionCanvas, url) => {
     const worlds = [];
@@ -394,7 +387,9 @@ const loadWorlds = async (mainCanvas, solutionCanvas, url) => {
         starterCode: data.starterCode,
     };
 }
-window.loadWorlds = loadWorlds;
+if (typeof window !== "undefined") {
+    window.loadWorlds = loadWorlds;
+}
 
 const loadWorldFromJson = (mainCanvas, solutionCanvas, dataStr) => {
     const data = JSON.parse(dataStr); 
@@ -402,20 +397,27 @@ const loadWorldFromJson = (mainCanvas, solutionCanvas, dataStr) => {
     world.populateData(data);
     return world;
 }
-window.loadWorldFromJson = loadWorldFromJson;
+if (typeof window !== "undefined") {
+    window.loadWorldFromJson = loadWorldFromJson;
+}
 
 const updateEggsAndCrabs = (numEggs, numCrabs) => {
     const eggCrabSpan = document.querySelector('#numEggsAndCrabs');
     if (eggCrabSpan) {
-        let updateStr = numEggs.toString() + ' eggs and ' + numCrabs.toString() + ' crabs';
-        if (numEggs == 1) {
-            updateStr = updateStr.replace('eggs', 'egg');
+        if (numEggs >= 0) {
+            let updateStr = 'The platypus is carrying ' + numEggs.toString() + ' eggs and ' + numCrabs.toString() + ' crabs.';
+            if (numEggs == 1) {
+                updateStr = updateStr.replace('eggs', 'egg');
+            }
+            
+            if (numCrabs == 1) {
+                updateStr = updateStr.replace('crabs', 'crab');
+            }
+            eggCrabSpan.innerText = updateStr;
+        } else {
+            eggCrabSpan.innerText = '';
         }
-        
-        if (numCrabs == 1) {
-            updateStr = updateStr.replace('crabs', 'crab');
-        }
-        eggCrabSpan.innerText = updateStr;
     }
 }
 
+export { loadWorlds };
