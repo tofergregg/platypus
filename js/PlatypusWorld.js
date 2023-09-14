@@ -352,7 +352,11 @@ class PlatypusWorld {
             grid = this._grids.solution;
         }
         if (adding) {
-            grid[clickRow][clickCol].base = color;
+            if (color == 'clear') {
+                grid[clickRow][clickCol].base = 'w'; // remove color
+            } else {
+                grid[clickRow][clickCol].base = color;
+            }
         } else {
             grid[clickRow][clickCol].base = 'w';
         }
