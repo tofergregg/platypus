@@ -46,7 +46,8 @@ const onMouseClick = (e) => {
         world.addRemoveBase(e.offsetX, e.offsetY, e.currentTarget, objType, adding);
     }
     if (objType == 'color') {
-        world.addRemoveColor(e.offsetX, e.offsetY, e.currentTarget, objType, adding);
+        const color = document.querySelector('input[name=color-name]:checked').value;
+        world.addRemoveColor(e.offsetX, e.offsetY, e.currentTarget, objType, color, adding);
     }
 }
 

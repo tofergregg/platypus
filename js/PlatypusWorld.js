@@ -343,7 +343,7 @@ class PlatypusWorld {
         this._grids.current = JSON.parse(JSON.stringify(this._grids.initial));
         this.drawWorld();
     }
-    addRemoveColor(x, y, canvas, obj, adding, force=false) {
+    addRemoveColor(x, y, canvas, obj, adding, color, force=false) {
         const cellSize = canvas.width / (Math.max(this._numRows, this._numCols));
         const clickRow = Math.floor(y / cellSize);
         const clickCol = Math.floor(x / cellSize);
@@ -352,7 +352,7 @@ class PlatypusWorld {
             grid = this._grids.solution;
         }
         if (adding) {
-            grid[clickRow][clickCol].base = 'red';
+            grid[clickRow][clickCol].base = color;
         } else {
             grid[clickRow][clickCol].base = 'w';
         }
