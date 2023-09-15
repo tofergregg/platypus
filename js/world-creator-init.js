@@ -155,3 +155,8 @@ const uploadWorlds = async () => {
     await copyToClipboard(completeUrl);
     alert("You've shared your code!\nLink copied to clipboard:\n" + completeUrl);
 }
+
+const toggleColors = () => {
+    const colorsDiv = document.querySelector('#square-colors');
+    colorsDiv.style.display = 'block';
+}
