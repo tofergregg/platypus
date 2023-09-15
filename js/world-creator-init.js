@@ -158,5 +158,7 @@ const uploadWorlds = async () => {
 
 const toggleColors = () => {
     const colorsDiv = document.querySelector('#square-colors');
+    const colorButton = document.querySelector('#color-radio-btn');
+    console.log(colorButton.checked);
     colorsDiv.style.display = 'block';
 }
