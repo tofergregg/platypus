@@ -265,7 +265,7 @@ class PlatypusWorld {
         const cellSize = canvas.width / (Math.max(this._numRows, this._numCols));
         const clickRow = Math.floor(y / cellSize);
         const clickCol = Math.floor(x / cellSize);
-        if (this._grids.initial[clickRow][clickCol].base == 'w') {
+        if (this._grids.initial[clickRow][clickCol].base != 'l') {
             if (plat.row == clickRow && plat.col == clickCol) {
                 // rotate clockwise
                 switch(plat.direction) {
